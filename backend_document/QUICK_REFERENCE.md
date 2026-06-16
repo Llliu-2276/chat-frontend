@@ -1,0 +1,445 @@
+# 🚀 ChatBackend 前端快速参考手册
+
+> 简洁版API参考 | 完整文档请查看 [API_DOCUMENTATION.md](API_DOCUMENTATION.md)
+
+---
+
+## 📡 基础信息
+
+- **API基础路径**: `http://localhost:8080/api`
+- **认证方式**: JWT Token (Bearer)
+- **数据格式**: JSON
+- **跨域**: 已配置CORS
+
+---
+
+## 🔑 核心接口速查
+
+### 认证接口
+
+| 接口 | 方法 | 路径 | 认证 |
+|-----|------|------|------|
+| 登录 | POST | `/api/auth/login` | ❌ |
+| 注册 | POST | `/api/auth/register` | ❌ |
+| 登出 | POST | `/api/auth/logout` | ✅ |
+
+### 用户资料接口
+
+| 接口 | 方法 | 路径 | 认证 |
+|-----|------|------|------|
+| 获取当前用户 | GET | `/api/user/profile/me` | ✅ |
+| 获取指定用户 | GET | `/api/user/profile/info/{userId}` | ✅ |
+| 修改用户名 | PUT | `/api/user/profile/info` | ✅ |
+| 修改密码 | POST | `/api/user/profile/password/change` | ✅ |
+
+### 搜索接口
+
+| 接口 | 方法 | 路径 | 认证 |
+|-----|------|------|------|
+| 搜索用户 | GET | `/api/user/search?keyword=xx&page=1&size=10` | ✅ |
+| 在线人数 | GET | `/api/user/search/count` | ✅ |
+
+> **搜索参数约束**：关键词不能为空，最多20字符；每页大小 1-50；页码 ≥ 1。
+
+### 心跳接口
+
+| 接口 | 方法 | 路径 | 认证 |
+|-----|------|------|------|
+| 发送心跳 | POST | `/api/user/heartbeat` | ✅ |
+
+### 好友接口
+
+| 接口 | 方法 | 路径 | 认证 |
+|-----|------|------|------|
+| 好友列表 | GET | `/api/friends/list` | ✅ |
+| 未读消息 | GET | `/api/friends/messages/unread` | ✅ |
+| 聊天记录 | GET | `/api/friends/chat-history/{friendId}?page=1&size=20` | ✅ |
+| 发送消息 | POST | `/api/friends/send-message` | ✅ |
+| 发起好友申请 | POST | `/api/friends/request` | ✅ |
+| 处理好友申请 | POST | `/api/friends/request/handle` | ✅ |
+| 查询收到的申请 | GET | `/api/friends/request/received?status=0&page=1&size=20` | ✅ |
+| 查询发出的申请 | GET | `/api/friends/request/sent?page=1&size=20` | ✅ |
+
+> **注意**：好友添加必须通过申请-同意流程，不存在直接添加好友的接口。发出的好友申请不支持撤回。
+
+---
+
+## 📡 WebSocket 实时通信
+
+| 端点 | 说明 |
+|------|------|
+| `ws://localhost:8080/ws/chat` | 连接时 URL 携带 `?token={JWT}` 认证（含Token黑名单+心跳校验） |
+
+**消息类型**：
+
+| type | 方向 | 说明 |
+|------|------|------|
+| `PRIVATE_MESSAGE` | C→S / S→C | 私聊消息 |
+| `FRIEND_ONLINE` | S→C | 好友上线通知 |
+| `FRIEND_OFFLINE` | S→C | 好友下线通知 |
+| `FRIEND_REQUEST` | S→C | 好友申请通知（字段：senderId, senderName, requestId, requestMessage, sendTime） |
+| `FRIEND_REQUEST_RESULT` | S→C | 好友申请结果通知（字段：senderId, senderName, requestId, content=accepted/rejected, sendTime） |
+| `READ_RECEIPT` | S→C | 消息已读回执 |
+| `HEARTBEAT` | S→C | 心跳响应 |
+| `ERROR` | S→C | 错误通知 |
+
+> 详细对接说明见 [WEBSOCKET_UPGRADE.md](./WEBSOCKET_UPGRADE.md)
+
+---
+
+## 💻 快速开始代码
+
+### 1. 登录
+
+```javascript
+const response = await fetch('http://localhost:8080/api/auth/login', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    userAccount: '12345678',
+    password: 'yourpassword'
+  })
+});
+
+const data = await response.json();
+if (data.code === 200) {
+  localStorage.setItem('chat_token', data.data.token);
+  localStorage.setItem('chat_user_info', JSON.stringify(data.data));
+}
+```
+
+### 2. 带Token的请求
+
+```javascript
+const token = localStorage.getItem('chat_token');
+
+const response = await fetch('http://localhost:8080/api/user/profile/me', {
+  headers: {
+    'Authorization': `Bearer ${token}`
+  }
+});
+
+const data = await response.json();
+```
+
+### 3. 心跳机制
+
+```javascript
+// 登录后启动
+const timer = setInterval(() => {
+  fetch('http://localhost:8080/api/user/heartbeat', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+}, 2 * 60 * 1000); // 每2分钟
+
+// 登出时停止
+clearInterval(timer);
+```
+
+### 4. 登出
+
+```javascript
+await fetch('http://localhost:8080/api/auth/logout', {
+  method: 'POST',
+  headers: { 'Authorization': `Bearer ${token}` }
+});
+
+localStorage.clear();
+window.location.href = '/login.html';
+```
+
+### 5. 获取好友列表
+
+```javascript
+const response = await fetch('http://localhost:8080/api/friends/list', {
+  headers: { 'Authorization': `Bearer ${token}` }
+});
+
+const data = await response.json();
+if (data.code === 200) {
+  const friends = data.data; // 好友列表
+  friends.forEach(friend => {
+    console.log(`${friend.userName} - ${friend.isOnline ? '在线' : '离线'}`);
+  });
+}
+```
+
+### 6. 获取未读消息
+
+```javascript
+const response = await fetch('http://localhost:8080/api/friends/messages/unread', {
+  headers: { 'Authorization': `Bearer ${token}` }
+});
+
+const data = await response.json();
+if (data.code === 200 && data.data.length > 0) {
+  // 更新未读红点
+  updateUnreadBadge(data.data.length);
+  // 注意：返回后后端自动标记为已读
+}
+```
+
+### 7. 获取聊天记录
+
+```javascript
+const friendId = 2;
+const page = 1;
+const size = 20;
+
+const response = await fetch(
+  `http://localhost:8080/api/friends/chat-history/${friendId}?page=${page}&size=${size}`,
+  { headers: { 'Authorization': `Bearer ${token}` } }
+);
+
+const data = await response.json();
+if (data.code === 200) {
+  const messages = data.data.content; // 消息列表
+  const totalPages = data.data.totalPages; // 总页数
+  // 渲染消息列表
+}
+```
+
+### 8. 发送好友消息
+
+```javascript
+const receiverId = 2;
+const content = '你好，在吗？';
+
+const response = await fetch('http://localhost:8080/api/friends/send-message', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`
+  },
+  body: JSON.stringify({ receiverId, content })
+});
+
+const data = await response.json();
+if (data.code === 201) {
+  console.log('消息发送成功');
+  // 将消息追加到聊天列表
+} else {
+  console.log('发送失败：' + data.message);
+}
+```
+
+### 9. 发送好友申请
+
+```javascript
+const receiverId = 2;
+const message = '你好，我是张三，希望加你为好友';
+
+const response = await fetch('http://localhost:8080/api/friends/request', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`
+  },
+  body: JSON.stringify({ receiverId, message })
+});
+
+const data = await response.json();
+if (data.code === 201) {
+  console.log('好友申请已发送');
+} else {
+  console.log('申请失败：' + data.message);
+}
+```
+
+### 10. 处理好友申请
+
+```javascript
+const requestId = 1;
+const accept = true; // true=同意, false=拒绝
+
+const response = await fetch('http://localhost:8080/api/friends/request/handle', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`
+  },
+  body: JSON.stringify({ requestId, accept })
+});
+
+const data = await response.json();
+if (data.code === 200) {
+  console.log(accept ? '已同意' : '已拒绝');
+  // 刷新好友列表和申请列表
+} else {
+  console.log('操作失败：' + data.message);
+}
+```
+
+### 11. 查询收到的好友申请
+
+```javascript
+const status = 0; // 0=待处理, 1=已同意, 2=已拒绝
+const page = 1;
+const size = 20;
+
+const response = await fetch(
+  `http://localhost:8080/api/friends/request/received?status=${status}&page=${page}&size=${size}`,
+  { headers: { 'Authorization': `Bearer ${token}` } }
+);
+
+const data = await response.json();
+if (data.code === 200) {
+  const requests = data.data.content;
+  requests.forEach(req => {
+    console.log(`${req.senderName} 申请加你为好友: ${req.message || '无留言'}`);
+  });
+}
+```
+
+---
+
+## 📦 统一响应格式
+
+```json
+{
+  "code": 200,
+  "message": "操作成功",
+  "data": { ... }
+}
+```
+
+**常见状态码**：
+- `200` - 成功
+- `201` - 创建成功
+- `400` - 参数错误
+- `401` - 未授权（跳转登录）
+- `500` - 服务器错误
+
+---
+
+## 🔐 请求头规范
+
+```javascript
+// 需要认证
+{
+  'Content-Type': 'application/json',
+  'Authorization': 'Bearer {token}'
+}
+
+// 不需要认证（登录、注册）
+{
+  'Content-Type': 'application/json'
+}
+```
+
+---
+
+## 📊 数据模型
+
+### UserInfo
+
+```typescript
+interface UserInfo {
+  userId: number;           // 用户ID
+  userAccount: string;      // 账号（8位数字）
+  userName: string;         // 用户名（≤16字符）
+  createDate: string;       // 创建日期（YYYY-MM-DD）
+  isOnline: boolean;        // 是否在线
+  isAvailable: boolean;     // 是否可用
+}
+```
+
+---
+
+## ⚠️ 错误处理模板
+
+```javascript
+async function apiCall(url, options) {
+  try {
+    const response = await fetch(url, options);
+    const data = await response.json();
+    
+    if (data.code === 401) {
+      localStorage.clear();
+      window.location.href = '/login.html';
+      return;
+    }
+    
+    if (data.code === 200 || data.code === 201) {
+      return { success: true, data: data.data };
+    }
+    
+    return { success: false, message: data.message };
+  } catch (error) {
+    return { success: false, message: '网络错误' };
+  }
+}
+```
+
+---
+
+## 🎯 关键要点
+
+1. ✅ **Token管理**：登录保存，请求携带，登出清除
+2. ✅ **心跳机制**：每2分钟发送一次，保持在线状态
+3. ✅ **错误处理**：401状态码跳转到登录页
+4. ✅ **搜索功能**：支持用户名模糊搜索和账号精确搜索（关键词≤20字符，每页≤50条）
+5. ✅ **密码加密**：后端使用BCrypt，前端可直接传明文
+6. ✅ **密码修改**：修改密码后所有旧Token自动失效，需重新登录
+7. ✅ **好友系统**：支持好友列表、未读消息、聊天记录查询、好友申请流程、发送消息
+8. ✅ **好友申请**：支持发起申请、同意/拒绝、查询收到/发出的申请
+9. ✅ **WebSocket**：实时消息推送、好友上线/下线通知、消息已读回执、好友申请通知
+
+---
+
+## 📡 WebSocket 快速示例
+
+```javascript
+// 1. 建立 WebSocket 连接
+const token = localStorage.getItem('chat_token');
+const ws = new WebSocket(`ws://localhost:8080/ws/chat?token=${token}`);
+
+// 2. 监听消息
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  switch (msg.type) {
+    case 'PRIVATE_MESSAGE':
+      console.log(`收到 ${msg.senderName} 的消息: ${msg.content}`);
+      break;
+    case 'FRIEND_ONLINE':
+      console.log(`${msg.senderName} 上线了`);
+      break;
+    case 'FRIEND_OFFLINE':
+      console.log(`${msg.senderName} 下线了`);
+      break;
+    case 'FRIEND_REQUEST':
+      console.log(`${msg.senderName} 请求加你为好友: ${msg.requestMessage || ''}`);
+      break;
+    case 'FRIEND_REQUEST_RESULT':
+      console.log(`${msg.senderName} ${msg.content === 'accepted' ? '同意了' : '拒绝了'}你的好友申请`);
+      break;
+  }
+};
+
+// 3. 发送消息
+ws.send(JSON.stringify({
+  type: 'PRIVATE_MESSAGE',
+  receiverId: 2,
+  content: '你好'
+}));
+```
+
+> 详细文档：[WEBSOCKET_UPGRADE.md](./WEBSOCKET_UPGRADE.md)
+
+---
+
+## 📚 完整文档
+
+详细文档请查看：[API_DOCUMENTATION.md](API_DOCUMENTATION.md)
+
+包含：
+- 所有接口的详细说明
+- 完整的请求响应示例
+- 错误码说明
+- 开发环境配置
+- 常见问题FAQ
+
+---
+
+**快速参考手册 v1.4** | 更新于 2026-06-15

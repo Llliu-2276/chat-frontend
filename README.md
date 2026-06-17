@@ -44,7 +44,6 @@ npm run build        # 生产构建 → dist/
 | [📋 完整 API 文档](backend_document/API_DOCUMENTATION.md) | 所有 REST 接口 + WebSocket 端点 |
 | [❌ 错误码说明](backend_document/ErrorCode.md) | 业务错误码参考 |
 | [🔌 WebSocket 升级说明](backend_document/WEBSOCKET_UPGRADE.md) | WS 连接流程与协议 |
-| [📝 需求文档](backend_document/UserNeedControllers.md) | 功能规划与接口清单 |
 | [⚡ 快速参考](backend_document/QUICK_REFERENCE.md) | 常用代码片段速查 |
 | [📖 后端文档说明](backend_document/FRONTEND_DOCS_README.md) | 文档结构总览 |
 

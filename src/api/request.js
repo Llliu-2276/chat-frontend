@@ -6,6 +6,8 @@
  */
 import axios from 'axios';
 import { getToken, removeToken, removeUserInfo } from '@/utils/storage';
+import { heartbeatManager } from '@/utils/heartbeat';
+import { wsManager } from '@/utils/websocket';
 import router from '@/router';
 
 // 创建 axios 实例
@@ -81,7 +83,7 @@ service.interceptors.response.use(
           console.error('请求过于频繁，请稍后再试');
           break;
         case 500:
-          console.error('服务器内部错误');
+          console.error('服务器内部错误:', errMsg);
           break;
         case 502:
           console.error('网关错误，后端服务可能未启动');
@@ -93,25 +95,35 @@ service.interceptors.response.use(
           console.error('网关超时');
           break;
         default:
-          console.error(`网络错误: ${status}`);
+          console.error(`网络错误: ${status}`, errMsg);
       }
+      // 优先使用后端返回的错误消息，降级到 HTTP 状态描述
+      const message = errMsg || error.message || '网络错误';
+      return Promise.reject(new Error(message));
     } else if (error.code === 'ECONNABORTED') {
       console.error('请求超时');
+      return Promise.reject(new Error('请求超时，请稍后重试'));
     } else {
       console.error('网络错误:', error.message);
+      return Promise.reject(new Error('网络连接失败，请检查网络'));
     }
-    return Promise.reject(error);
+    return Promise.reject(new Error('未知错误'));
   },
 );
 
 /**
  * 处理未授权情况
- * 清除本地存储并跳转到登录页
+ * 清除本地存储、停止心跳、断开 WebSocket 并跳转到登录页
+ * 与后端文档同步：401 场景必须完整清除所有认证状态
  */
 function handleUnauthorized() {
   // 清除本地存储
   removeToken();
   removeUserInfo();
+
+  // 停止心跳和 WebSocket（与 useUserStore.clearUserState 保持一致）
+  heartbeatManager.stop();
+  wsManager.disconnect();
 
   // 跳转到登录页
   if (router.currentRoute.value.path !== '/login') {

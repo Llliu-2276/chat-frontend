@@ -14,7 +14,9 @@
 | WebSocket 端点 | `ws://localhost:8080/ws/chat`，握手阶段 JWT 认证 + Token黑名单校验 + 心跳状态校验 |
 | 私聊消息推送 | 消息持久化到 MySQL 后，通过 WebSocket 实时推送给接收者，同时回传给发送者 |
 | 在线状态广播 | 用户连接/断开时，自动向所有好友推送上线/下线通知 |
-| 消息已读回执 | 接收者阅读消息后，通过 `READ_RECEIPT` 通知发送者 |
+| 消息已读回执 | 接收者阅读消息后，通过 `READ_RECEIPT`（私聊）或 `GROUP_READ_RECEIPT`（群聊）通知服务端 |
+| 群聊消息广播 | 群成员发送消息后，广播 `GROUP_MESSAGE` 给所有群成员 |
+| 群成员变动通知 | 成员加入推送 `GROUP_MEMBER_JOIN`，退出/解散推送 `GROUP_MEMBER_LEAVE` |
 | WebSocket 心跳 | 连接层心跳，替代原有的 HTTP 心跳接口 |
 | 好友申请通知 | 发起申请时实时推送 `FRIEND_REQUEST` 给被申请人 |
 | 申请结果通知 | 处理申请后实时推送 `FRIEND_REQUEST_RESULT` 给申请人 |
@@ -55,18 +57,23 @@ Token 从登录接口获取，放在 URL 查询参数中。
 
 ```json
 { "type": "PRIVATE_MESSAGE", "receiverId": 2, "content": "消息内容" }
+{ "type": "GROUP_MESSAGE", "groupId": 1, "content": "群聊消息内容" }
 { "type": "HEARTBEAT" }
 { "type": "READ_RECEIPT", "recordId": 105 }
+{ "type": "GROUP_READ_RECEIPT", "groupId": 1, "recordId": 200 }
 ```
 
 **服务端推送：**
 
 ```json
 { "type": "PRIVATE_MESSAGE", "senderId": 1, "senderName": "张三", "content": "消息内容", "sendTime": "2026-06-09T12:00:00", "recordId": 105 }
+{ "type": "GROUP_MESSAGE", "senderId": 1, "senderName": "张三", "groupId": 1, "content": "群聊消息", "sendTime": "2026-06-09T12:00:00", "recordId": 200 }
 { "type": "FRIEND_ONLINE", "senderId": 5, "senderName": "李四" }
 { "type": "FRIEND_OFFLINE", "senderId": 5, "senderName": "李四" }
 { "type": "FRIEND_REQUEST", "senderId": 3, "senderName": "王五", "requestId": 1, "requestMessage": "你好，希望加你为好友", "sendTime": "2026-06-10T10:30:00" }
 { "type": "FRIEND_REQUEST_RESULT", "senderId": 2, "senderName": "李四", "requestId": 1, "content": "accepted", "sendTime": "2026-06-10T11:00:00" }
+{ "type": "GROUP_MEMBER_JOIN", "groupId": 1, "senderId": 3, "senderName": "王五", "sendTime": "2026-06-10T12:00:00" }
+{ "type": "GROUP_MEMBER_LEAVE", "groupId": 1, "senderId": 3, "senderName": "王五", "sendTime": "2026-06-10T12:30:00" }
 { "type": "READ_RECEIPT", "senderId": 2, "recordId": 105 }
 { "type": "ERROR", "error": "错误信息" }
 ```
@@ -78,7 +85,10 @@ Token 从登录接口获取，放在 URL 查询参数中。
 - 收到 `FRIEND_ONLINE` / `FRIEND_OFFLINE` 时，更新对应好友的在线状态显示
 - 收到 `FRIEND_REQUEST` 时，弹出好友申请通知，刷新申请列表
 - 收到 `FRIEND_REQUEST_RESULT` 时，更新申请状态（`content` 为 `accepted` 或 `rejected`）
-- 收到 `READ_RECEIPT` 时，将对应消息标记为已读
+- 收到 `READ_RECEIPT` 时，将对应私聊消息标记为已读
+- 收到 `GROUP_MESSAGE` 时，将消息追加到对应群聊天列表
+- 收到 `GROUP_MEMBER_JOIN` / `GROUP_MEMBER_LEAVE` 时，更新群成员列表
+- 进入群聊页面时，发送 `GROUP_READ_RECEIPT` 上报已读位置（也可调用 REST `POST /api/group/{groupId}/read/{recordId}`）
 - 连接断开后，未送达的消息不会丢失，前端可通过原有 REST 接口补拉
 - 页面关闭前主动断开连接
 

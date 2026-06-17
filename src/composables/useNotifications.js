@@ -1,21 +1,16 @@
 /**
  * 通知管理 Composable
- * 负责好友申请通知、通知面板、侧面板（添加好友/群聊操作）、
- * 以及好友申请相关的 WebSocket 事件处理
+ * 负责好友申请通知的加载、处理、以及 WebSocket 实时通知
  *
  * @module composables/useNotifications
  */
-import { ref, watch, onMounted } from 'vue';
+import { ref, onMounted } from 'vue';
 import {
   handleFriendRequest,
   getReceivedRequests,
   getSentRequests,
-  sendFriendRequest,
 } from '@/api/friend';
-import { searchUsers } from '@/api/user';
 import { wsManager } from '@/utils/websocket';
-import { useUserStore } from '@/stores/user';
-import { ElMessageBox } from 'element-plus';
 
 /**
  * 通知管理
@@ -27,8 +22,6 @@ import { ElMessageBox } from 'element-plus';
  * @param {Object} options.toast - Toast 通知对象
  */
 export function useNotifications({ loadFriends, activeView, chatTarget, mobileView, toast }) {
-  const userStore = useUserStore();
-
   // ==================== 通知状态 ====================
   const receivedRequests = ref([]);
   const sentRequests = ref([]);
@@ -41,16 +34,6 @@ export function useNotifications({ loadFriends, activeView, chatTarget, mobileVi
   const hasMoreReceived = ref(true);
   const hasMoreSent = ref(true);
   const pendingRequestCount = ref(0);
-  /** 正在发送申请的用户ID集合（防重复提交） */
-  const sendingRequestIds = ref(new Set());
-
-  // ==================== 侧面板状态 ====================
-  const showSidePanel = ref(false);
-  const sidePanelMode = ref('friend');
-  const groupSubMode = ref('join');
-  const panelSearchResults = ref([]);
-  const panelSearching = ref(false);
-  let panelSearchTimer = null;
 
   // ==================== 通知操作 ====================
   /**
@@ -175,176 +158,6 @@ export function useNotifications({ loadFriends, activeView, chatTarget, mobileVi
     }
   }
 
-  // ==================== 侧面板操作 ====================
-  /** 重置侧面板搜索状态 */
-  function resetPanelState() {
-    panelSearchResults.value = [];
-    panelSearching.value = false;
-    if (panelSearchTimer) { clearTimeout(panelSearchTimer); panelSearchTimer = null; }
-  }
-
-  /**
-   * 处理群聊操作（创建/加入）
-   * @param {string} action - 'create' | 'join'
-   */
-  function handleGroupAction(action) {
-    if (showSidePanel.value && sidePanelMode.value === 'group' && groupSubMode.value === action) {
-      closeSidePanel();
-      return;
-    }
-    sidePanelMode.value = 'group';
-    groupSubMode.value = action;
-    showSidePanel.value = true;
-    resetPanelState();
-  }
-
-  /**
-   * 打开侧面板
-   * @param {string} mode - 面板模式 'friend' | 'group'
-   */
-  function openSidePanel(mode) {
-    if (showSidePanel.value && sidePanelMode.value === mode) {
-      closeSidePanel();
-      return;
-    }
-    sidePanelMode.value = mode;
-    showSidePanel.value = true;
-    resetPanelState();
-  }
-
-  /** 关闭侧面板 */
-  function closeSidePanel() {
-    showSidePanel.value = false;
-    resetPanelState();
-  }
-
-  /**
-   * 侧面板搜索用户（带防抖）
-   * @param {string} keyword - 搜索关键词
-   */
-  function handlePanelSearch(keyword) {
-    if (panelSearchTimer) clearTimeout(panelSearchTimer);
-    if (!keyword?.trim()) {
-      panelSearchResults.value = [];
-      return;
-    }
-    panelSearchTimer = setTimeout(async () => {
-      panelSearching.value = true;
-      try {
-        const res = await searchUsers({ keyword, page: 1, size: 20 });
-        if (res.code === 200 && res.data) {
-          panelSearchResults.value = (res.data.content || []).filter(u => u.userId !== userStore.userId);
-        }
-      } catch (e) {
-        console.error('搜索用户失败:', e);
-      } finally {
-        panelSearching.value = false;
-      }
-    }, 300);
-  }
-
-  /**
-   * 发送好友申请
-   * 弹出对话框让用户输入申请留言
-   * @param {Object} user - 目标用户对象
-   */
-  async function handleAddFriend(user) {
-    if (!user?.userId) return;
-
-    // 防止重复发送
-    if (sendingRequestIds.value.has(user.userId)) {
-      toast.info('正在发送申请，请稍候');
-      return;
-    }
-
-    // 检查是否已发送过申请
-    const hasPending = sentRequests.value.some(
-      r => r.receiverId === user.userId && r.status === 0
-    );
-    if (hasPending) {
-      toast.info('已向该用户发送过申请，请等待处理结果');
-      return;
-    }
-
-    const defaultMsg = `你好，我是${userStore.userName}，希望加你为好友`;
-    try {
-      const { value } = await ElMessageBox.prompt(
-        `<div class="add-friend-dialog-user">
-          <div class="add-friend-avatar">${(user.userName || '?').charAt(0)}</div>
-          <div class="add-friend-info">
-            <div class="add-friend-name">${user.userName}</div>
-            <div class="add-friend-account">账号：${user.userAccount}</div>
-          </div>
-        </div>`,
-        '发送好友申请',
-        {
-          confirmButtonText: '发送申请',
-          cancelButtonText: '取消',
-          inputValue: defaultMsg,
-          inputPlaceholder: '请输入申请留言',
-          inputPattern: /^\s*\S.*$/,
-          inputErrorMessage: '留言内容不能为空且不超过100字',
-          dangerouslyUseHTMLString: true,
-          customClass: 'add-friend-dialog',
-          closeOnClickModal: false,
-        }
-      );
-      const message = (value || '').trim() || defaultMsg;
-      sendingRequestIds.value.add(user.userId);
-      const res = await sendFriendRequest({ receiverId: user.userId, message });
-      if (res.code === 201 || res.code === 200) {
-        toast.success(`已向 ${user.userName} 发送好友申请`);
-        panelSearchResults.value = [];
-        closeSidePanel();
-      }
-    } catch (e) {
-      // Element Plus ElMessageBox 取消时抛出 Error 对象，message 属性为 'cancel'
-      if (e.message !== 'cancel') {
-        // 处理后端返回的具体错误信息
-        const errorMsg = e.message || '';
-        if (errorMsg.includes('409') || errorMsg.includes('Conflict')) {
-          // 409 冲突：已是好友或已有待处理申请
-          if (errorMsg.includes('已经是好友')) {
-            toast.info('你们已经是好友，无需再次申请');
-          } else if (errorMsg.includes('待处理')) {
-            toast.info('已有待处理的申请，请等待对方处理');
-          } else {
-            toast.info('该申请无法发送，请检查好友关系');
-          }
-        } else if (errorMsg.includes('400')) {
-          toast.info('请求参数有误，请检查后重试');
-        } else if (errorMsg.includes('401') || errorMsg.includes('未授权')) {
-          toast.error('登录已过期，请重新登录');
-        } else if (errorMsg.includes('403')) {
-          toast.error('无权执行此操作');
-        } else if (errorMsg.includes('404')) {
-          toast.info('用户不存在');
-        } else if (errorMsg.includes('500') || errorMsg.includes('服务器')) {
-          toast.error('服务器繁忙，请稍后重试');
-        } else if (errorMsg.includes('网络') || errorMsg.includes('timeout') || errorMsg.includes('Network')) {
-          toast.error('网络连接失败，请检查网络后重试');
-        } else {
-          // 其他后端返回的具体错误信息
-          toast.error(errorMsg || '发送申请失败，请重试');
-        }
-      }
-    } finally {
-      sendingRequestIds.value.delete(user.userId);
-    }
-  }
-
-  /** 创建群聊（待后端实现） */
-  function handleCreateGroup() {
-    // TODO: 对接创建群聊 API
-    toast.info('创建群聊功能待后端实现');
-  }
-
-  /** 加入群聊（待后端实现） */
-  function handleJoinGroup() {
-    // TODO: 对接加入群聊 API
-    toast.info('加入群聊功能待后端实现');
-  }
-
   // ==================== WebSocket 事件处理 ====================
   /**
    * 处理 WebSocket 好友申请通知
@@ -392,13 +205,6 @@ export function useNotifications({ loadFriends, activeView, chatTarget, mobileVi
     wsManager.on('FRIEND_REQUEST_RESULT', _wsFriendRequestResult);
   });
 
-  // ==================== 侦听器 ====================
-  // 切换面板模式时重置搜索状态，但 profile 导航保留状态（支持返回后恢复搜索结果）
-  watch(sidePanelMode, (newMode, oldMode) => {
-    if (newMode === 'profile' || oldMode === 'profile') return;
-    resetPanelState();
-  });
-
   return {
     // 通知状态
     receivedRequests,
@@ -410,13 +216,6 @@ export function useNotifications({ loadFriends, activeView, chatTarget, mobileVi
     hasMoreReceived,
     hasMoreSent,
     pendingRequestCount,
-    sendingRequestIds,
-    // 侧面板状态
-    showSidePanel,
-    sidePanelMode,
-    groupSubMode,
-    panelSearchResults,
-    panelSearching,
     // 通知操作
     openNotifications,
     loadReceivedRequests,
@@ -425,17 +224,8 @@ export function useNotifications({ loadFriends, activeView, chatTarget, mobileVi
     loadMoreSent,
     onHandleRequest,
     loadPendingCount,
-    // 侧面板操作
-    handleGroupAction,
-    openSidePanel,
-    closeSidePanel,
-    handlePanelSearch,
-    handleAddFriend,
-    handleCreateGroup,
-    handleJoinGroup,
     // 清理（供 Chat.vue 的 onBeforeUnmount 调用）
     _cleanupNotifications() {
-      if (panelSearchTimer) { clearTimeout(panelSearchTimer); panelSearchTimer = null; }
       wsManager.off('FRIEND_REQUEST', _wsFriendRequest);
       wsManager.off('FRIEND_REQUEST_RESULT', _wsFriendRequestResult);
     },

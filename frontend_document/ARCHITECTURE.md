@@ -39,7 +39,10 @@ chat_frontend/
 │   │   ├── chat/                  # 聊天子组件
 │   │   │   ├── ChatLeftPanel.vue  # 左侧面板（好友/群聊列表）
 │   │   │   ├── ChatMessageArea.vue# 消息区域（消息流+输入框）
-│   │   │   └── ChatSidePanel.vue  # 右侧面板（添加好友/群聊）
+│   │   │   ├── ChatSidePanel.vue  # 右侧面板（容器：搜索/群聊/资料入口）
+│   │   │   ├── ChatProfileCard.vue# 个人资料卡片（本人/好友/陌生人）
+│   │   │   ├── ChatNotificationPanel.vue # 通知面板（好友申请气泡流）
+│   │   │   └── index.js           # 统一导出
 │   │   └── common/
 │   │       └── GlobalLoading.vue  # 全局加载遮罩
 │   │
@@ -58,11 +61,16 @@ chat_frontend/
 │   │   ├── heartbeat.js           # 心跳管理器（单例）
 │   │   └── websocket.js           # WebSocket 管理器（单例）
 │   │
+│   ├── composables/               # 业务逻辑（Composables）
+│   │   ├── useFriendList.js       # 好友/群聊列表管理
+│   │   ├── useChatMessages.js     # 聊天消息管理
+│   │   ├── useNotifications.js    # 好友申请通知流
+│   │   ├── useSidePanel.js        # 侧面板状态和搜索
+│   │   └── useProfile.js          # 个人资料操作
+│   │
 │   ├── views/                     # 页面组件
 │   │   ├── Login.vue              # 登录/注册页（遮罩切换）
-│   │   ├── Chat.vue               # 聊天主页（容器组件）
-│   │   ├── Profile.vue            # 个人资料页（待实现）
-│   │   └── Search.vue             # 搜索用户页（待实现）
+│   │   └── Chat.vue               # 聊天主页（容器组件）
 │   │
 │   ├── App.vue                    # 根组件（全局 provide）
 │   ├── main.js                    # 应用入口
@@ -102,7 +110,7 @@ chat_frontend/
 | 好友系统 | ✅ 已完成 | 好友列表、添加/删除好友、搜索用户 |
 | 消息收发 | ✅ 已完成 | WebSocket 优先 + REST 降级、乐观更新、已读回执 |
 | 在线状态 | ✅ 已完成 | HTTP 心跳 + WebSocket 推送双重机制 |
-| 群聊系统 | ⚠️ UI 已预留 | 创建/加入群聊（待后端实现） |
+| 群聊系统 | ✅ 已完成 | 群列表、创建、消息收发（WS+HTTP）、群资料、解散/退出 |
 
 ---
 
@@ -111,7 +119,7 @@ chat_frontend/
 ```
 ┌──────────────────────────────────────────────────────┐
 │                    Vue 组件层                         │
-│  Login.vue / Chat.vue / Profile.vue / Search.vue     │
+│  Login.vue / Chat.vue                                │
 └──────────────────┬───────────────────────────────────┘
                    │ 调用 Store Action / 直接调用 API
                    ▼

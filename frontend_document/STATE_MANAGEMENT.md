@@ -12,7 +12,7 @@ src/stores/
 └── user.js          # 用户状态管理
 ```
 
-> 目前只有一个 `user` Store。聊天相关状态（friends、messages 等）由 Chat.vue 组件内部管理，后续可抽取为独立 Store。
+> 目前只有一个 `user` Store。聊天相关状态（好友、消息、通知、面板等）由 5 个 Composables 管理，见下表。
 
 ---
 
@@ -93,6 +93,22 @@ main.js → userStore.initUserState()
   │   └── wsManager.connect()
   └── 若不存在：保持未登录状态
 ```
+
+---
+
+## 三之一、Composables 状态管理
+
+聊天页面的业务状态由 5 个 Composables 分层管理，Chat.vue 纯做编排：
+
+| Composable | 管理状态 | 关键职责 |
+|------------|---------|---------|
+| `useFriendList` | `friends`, `groups`, `chatTarget`, `chatType`, 展开/折叠状态 | 好友/群聊列表加载、在线状态更新、未读消息轮询、群聊 WS 事件 |
+| `useChatMessages` | `messages`, `loadingMessages`, `currentPage`, `hasMoreMessages` | 消息收发（WS 优先 + HTTP fallback）、历史加载、群聊消息 |
+| `useNotifications` | `receivedRequests`, `sentRequests`, 分页、`pendingRequestCount` | 好友申请流管理、申请处理、WS 实时通知 |
+| `useSidePanel` | `showSidePanel`, `sidePanelMode`, `groupSubMode`, 搜索状态, `sendingRequestIds` | 侧面板 UI 状态、用户搜索（防抖）、发送好友申请、创建群聊 |
+| `useProfile` | `profileUser`, `profileContext`, `profileLoading`, `panelHistory` | 资料查看（用户/群聊）、用户名编辑、密码修改、删除好友、解散/退出群聊 |
+
+**设计原则**：Composable 通过参数接收依赖（toast、store、回调函数），拥有独立生命周期（WebSocket 注册/注销在 `onMounted`/`onBeforeUnmount` 中），Chat.vue 只负责初始化顺序和跨 composable 编排。
 
 ---
 

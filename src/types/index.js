@@ -199,5 +199,60 @@
  * @property {string} sendTime - 处理时间
  */
 
+/**
+ * WebSocket 群聊消息
+ * @typedef {Object} WsGroupMessage
+ * @property {'GROUP_MESSAGE'} type - 消息类型
+ * @property {number} senderId - 发送者ID
+ * @property {string} senderName - 发送者用户名
+ * @property {number} groupId - 群组ID
+ * @property {string} content - 消息内容
+ * @property {string} sendTime - 发送时间
+ * @property {number} recordId - 消息记录ID
+ */
+
+/**
+ * WebSocket 群成员变动通知
+ * @typedef {Object} WsGroupMemberChange
+ * @property {'GROUP_MEMBER_JOIN'|'GROUP_MEMBER_LEAVE'} type - 消息类型
+ * @property {number} groupId - 群组ID
+ * @property {string} groupName - 群名称
+ * @property {number} senderId - 变动人员ID
+ * @property {string} senderName - 变动人员用户名
+ */
+
+/**
+ * 群组信息视图对象
+ * @typedef {Object} GroupInfoVO
+ * @property {number} groupId - 群组ID
+ * @property {string} account - 群账号（8位数字）
+ * @property {string} groupName - 群名称
+ * @property {string} ownerName - 群主用户名
+ * @property {number} memberCount - 成员数
+ * @property {string} createDate - 创建日期 (YYYY-MM-DD)
+ * @property {boolean} isOwner - 当前用户是否为群主
+ */
+
+/**
+ * 群聊消息视图对象
+ * @typedef {Object} GroupMessageVO
+ * @property {number} recordId - 消息记录ID
+ * @property {number} senderId - 发送者用户ID
+ * @property {string} senderName - 发送者用户名
+ * @property {number} groupId - 群组ID
+ * @property {string} content - 消息内容
+ * @property {string} sendTime - 发送时间 (YYYY-MM-DDTHH:mm:ss)
+ */
+
+/**
+ * 群成员视图对象
+ * @typedef {Object} GroupMemberVO
+ * @property {number} userId - 用户ID
+ * @property {string} userName - 用户名
+ * @property {string} userAccount - 用户账号
+ * @property {boolean} isOwner - 是否为群主
+ * @property {string} joinDate - 加入日期 (YYYY-MM-DD)
+ */
+
 // 导出空对象以支持 import
 export {};

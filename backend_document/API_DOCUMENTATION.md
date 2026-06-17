@@ -1,6 +1,6 @@
 # 📘 ChatBackend 前后端对接文档
 
-> **文档版本**: v1.3  
+> **文档版本**: v1.6  
 > **更新日期**: 2026-06-15  
 > **适用对象**: 前端开发工程师  
 > **后端技术栈**: Spring Boot 4.0.2 + JWT + Redis + MySQL
@@ -146,6 +146,23 @@
 - ✅ 好友间发送消息（关系验证、内容校验）
 - ✅ 好友申请双向确认机制（发起/处理/查询/取消）
 - ✅ 好友申请 WebSocket 实时通知
+- ✅ 删除好友（含聊天记录清理）
+
+#### 📦 模块6：群组系统
+
+**功能描述**：群组创建、列表查询、详情查看、解散/退出
+
+**已实现功能**：
+- ✅ 创建群聊（自动生成8位群账号）
+- ✅ 获取用户群聊列表
+- ✅ 查看群聊详情（含成员列表）
+- ✅ 群主解散群聊（清除成员和聊天记录）
+- ✅ 成员退出群聊
+- ✅ 发送群聊消息
+- ✅ 群聊天记录查询（分页，含发送者信息）
+- ✅ 群成员列表查询
+- ✅ WebSocket 群聊消息实时广播
+- ✅ 群成员变动 WebSocket 实时通知（成员退出/群解散）
 
 **前端配合要点**：
 - 好友列表页面展示在线状态
@@ -1275,9 +1292,682 @@ GET /api/friends/request/sent?page=1&size=20
 
 ---
 
+#### 3.5.10 删除好友
+
+```
+DELETE /api/friends/remove/{friendId}
+```
+
+**路径参数**：
+- `friendId` (Long) - 要删除的好友用户ID
+
+**请求头**：
+```
+Authorization: Bearer {token}
+```
+
+**请求示例**：
+```
+DELETE /api/friends/remove/2
+```
+
+**成功响应**：
+```json
+{
+  "code": 200,
+  "message": "删除好友成功",
+  "data": null
+}
+```
+
+**认证要求**：✅ 需要Token
+
+**用途**：好友列表页删除好友、解除好友关系
+
+**前端处理**：
+1. 在好友列表或好友详情页显示"删除好友"按钮
+2. 点击后弹出确认对话框
+3. 确认后调用删除接口
+4. 成功后刷新好友列表
+
+**错误响应示例**：
+
+好友ID为空：
+```json
+{
+  "code": 400,
+  "message": "好友ID不能为空",
+  "data": null
+}
+```
+
+不能删除自己：
+```json
+{
+  "code": 400,
+  "message": "不能删除自己",
+  "data": null
+}
+```
+
+好友关系不存在：
+```json
+{
+  "code": 404,
+  "message": "好友关系不存在",
+  "data": null
+}
+```
+
+**注意事项**：
+- 删除好友会**同时清理双方的所有聊天记录**，操作不可逆
+- 整个操作在事务中执行，任一步骤失败均回滚
+- 解除好友关系后，可以重新发起好友申请
+- 只能删除自己的好友，不能删除他人的好友关系
+
+**前端请求示例**：
+```javascript
+async function removeFriend(friendId) {
+  // 弹出确认对话框
+  if (!confirm('确定要删除该好友吗？聊天记录将被清除且无法恢复。')) {
+    return;
+  }
+
+  const response = await fetch(`http://localhost:8080/api/friends/remove/${friendId}`, {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  });
+  const data = await response.json();
+
+  if (data.code === 200) {
+    alert('好友已删除');
+    // 刷新好友列表
+    refreshFriendList();
+  } else {
+    alert(data.message);
+  }
+}
+```
+
+---
+
+---
+
+### 3.6 群组模块接口
+
+#### 3.6.1 创建群聊
+
+```
+POST /api/group/create
+```
+
+**请求参数**（Body - JSON）：
+```json
+{
+  "groupName": "我的群聊"
+}
+```
+
+**字段说明**：
+- `groupName` (String, 必填) - 群名称（最大16字符）
+
+**请求头**：
+```
+Authorization: Bearer {token}
+```
+
+**响应数据**：
+```json
+{
+  "code": 201,
+  "message": "群聊创建成功",
+  "data": {
+    "groupId": 1,
+    "account": "12345678",
+    "groupName": "我的群聊",
+    "ownerName": "张三",
+    "memberCount": 1,
+    "createDate": "2026-06-15",
+    "isOwner": true
+  }
+}
+```
+
+**认证要求**：✅ 需要Token
+
+**用途**：创建新群聊，创建者自动成为群主
+
+**注意事项**：
+- 群名称不能为空，不能超过16个字符
+- 群账号由系统自动生成8位数字
+- 创建者自动成为群主和第一个成员
+
+---
+
+#### 3.6.2 获取群聊列表
+
+```
+GET /api/group/list
+```
+
+**请求参数**：无
+
+**请求头**：
+```
+Authorization: Bearer {token}
+```
+
+**响应数据**：
+```json
+{
+  "code": 200,
+  "message": "获取群聊列表成功",
+  "data": [
+    {
+      "groupId": 1,
+      "account": "12345678",
+      "groupName": "我的群聊",
+      "ownerName": "张三",
+      "memberCount": 5,
+      "createDate": "2026-06-15",
+      "isOwner": true
+    },
+    {
+      "groupId": 2,
+      "account": "87654321",
+      "groupName": "项目讨论组",
+      "ownerName": "李四",
+      "memberCount": 12,
+      "createDate": "2026-06-10",
+      "isOwner": false
+    }
+  ]
+}
+```
+
+**认证要求**：✅ 需要Token
+
+**用途**：群聊列表页面
+
+**前端处理**：
+- 展示群聊卡片列表
+- 显示成员数量和群主名称
+- 根据isOwner显示不同操作按钮（群主可解散，非群主可退出）
+
+---
+
+#### 3.6.3 获取群聊详情
+
+```
+GET /api/group/info/{groupId}
+```
+
+**路径参数**：
+- `groupId` (Long) - 群组ID
+
+**请求头**：
+```
+Authorization: Bearer {token}
+```
+
+**响应数据**：
+```json
+{
+  "code": 200,
+  "message": "获取群聊详情成功",
+  "data": {
+    "groupId": 1,
+    "account": "12345678",
+    "groupName": "我的群聊",
+    "ownerId": 1,
+    "ownerName": "张三",
+    "memberCount": 2,
+    "createDate": "2026-06-15",
+    "memberList": [
+      {
+        "userId": 1,
+        "userName": "张三",
+        "userAccount": "11111111",
+        "isOwner": true,
+        "joinDate": "2026-06-15"
+      },
+      {
+        "userId": 2,
+        "userName": "李四",
+        "userAccount": "22222222",
+        "isOwner": false,
+        "joinDate": "2026-06-15"
+      }
+    ]
+  }
+}
+```
+
+**认证要求**：✅ 需要Token
+
+**用途**：群聊详情页面，展示群信息、成员列表
+
+**权限规则**：
+- 群成员可查看任何群详情
+- 非成员仅可查看公开群（isVisible=true）
+- 非公开群非成员访问返回 403
+
+---
+
+#### 3.6.4 解散或退出群聊
+
+```
+DELETE /api/group/{groupId}
+```
+
+**路径参数**：
+- `groupId` (Long) - 群组ID
+
+**请求头**：
+```
+Authorization: Bearer {token}
+```
+
+**成功响应（群主解散）**：
+```json
+{
+  "code": 200,
+  "message": "群聊已解散",
+  "data": null
+}
+```
+
+**成功响应（成员退出）**：
+```json
+{
+  "code": 200,
+  "message": "已退出群聊",
+  "data": null
+}
+```
+
+**认证要求**：✅ 需要Token
+
+**用途**：群聊设置页面的解散/退出按钮
+
+**业务规则**：
+- 群主操作：解散群聊（删除所有成员关系 + 清空聊天记录 + 删除群聊信息）
+- 非群主操作：仅退出群聊（删除自己的成员关系）
+- 整个操作具有事务性
+
+**前端处理**：
+```javascript
+async function dissolveOrLeaveGroup(groupId, isOwner) {
+  const actionText = isOwner ? '解散群聊' : '退出群聊';
+  const warnText = isOwner
+    ? '确定要解散该群聊吗？所有成员将被移除，聊天记录将被清除且无法恢复。'
+    : '确定要退出该群聊吗？';
+
+  if (!confirm(warnText)) return;
+
+  const response = await fetch(`http://localhost:8080/api/group/${groupId}`, {
+    method: 'DELETE',
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  const data = await response.json();
+
+  if (data.code === 200) {
+    alert(isOwner ? '群聊已解散' : '已退出群聊');
+    // 刷新群聊列表
+    refreshGroupList();
+  } else {
+    alert(data.message);
+  }
+}
+```
+
+**错误响应示例**：
+
+群聊不存在：
+```json
+{
+  "code": 404,
+  "message": "群聊不存在",
+  "data": null
+}
+```
+
+非群成员：
+```json
+{
+  "code": 403,
+  "message": "您不是该群聊的成员",
+  "data": null
+}
+```
+
+---
+
+#### 3.6.5 发送群聊消息
+
+```
+POST /api/group/message
+```
+
+**请求参数**（Body - JSON）：
+```json
+{
+  "groupId": 1,
+  "content": "大家好！"
+}
+```
+
+**字段说明**：
+- `groupId` (Long, 必填) - 目标群组ID
+- `content` (String, 必填) - 消息内容（最大2000字符）
+
+**请求头**：
+```
+Authorization: Bearer {token}
+```
+
+**成功响应**：
+```json
+{
+  "code": 201,
+  "message": "消息发送成功",
+  "data": null
+}
+```
+
+**认证要求**：✅ 需要Token
+
+**错误响应示例**：
+
+非群成员：
+```json
+{
+  "code": 403,
+  "message": "您不是该群聊的成员，无法发送消息",
+  "data": null
+}
+```
+
+**注意事项**：
+- 发送者必须是群成员
+- 消息默认为纯文本，不包含已读状态
+- 消息内容前后空格会被自动去除
+
+---
+
+#### 3.6.6 获取群聊天记录
+
+```
+GET /api/group/history/{groupId}
+```
+
+**路径参数**：
+- `groupId` (Long) - 群组ID
+
+**请求参数**（Query Parameters）：
+- `page` (int, 可选, 默认1) - 页码（从1开始）
+- `size` (int, 可选, 默认20) - 每页数量（最大100）
+
+**请求头**：
+```
+Authorization: Bearer {token}
+```
+
+**请求示例**：
+```
+GET /api/group/history/1?page=1&size=20
+```
+
+**响应数据**：
+```json
+{
+  "code": 200,
+  "message": "获取群聊记录成功",
+  "data": {
+    "content": [
+      {
+        "recordId": 1,
+        "senderId": 1,
+        "senderName": "张三",
+        "groupId": 1,
+        "content": "大家好！",
+        "sendTime": "2026-06-15T14:30:00"
+      },
+      {
+        "recordId": 2,
+        "senderId": 2,
+        "senderName": "李四",
+        "groupId": 1,
+        "content": "你好！",
+        "sendTime": "2026-06-15T14:31:00"
+      }
+    ],
+    "pageable": {
+      "pageNumber": 0,
+      "pageSize": 20
+    },
+    "totalElements": 25,
+    "totalPages": 2,
+    "last": false,
+    "first": true
+  }
+}
+```
+
+**认证要求**：✅ 需要Token
+
+**权限规则**：
+- 群成员可查看聊天记录
+- 非成员仅可查看公开群的聊天记录
+
+---
+
+#### 3.6.7 获取群成员列表
+
+```
+GET /api/group/members/{groupId}
+```
+
+**路径参数**：
+- `groupId` (Long) - 群组ID
+
+**请求头**：
+```
+Authorization: Bearer {token}
+```
+
+**响应数据**：
+```json
+{
+  "code": 200,
+  "message": "获取群成员列表成功",
+  "data": [
+    {
+      "userId": 1,
+      "userName": "张三",
+      "userAccount": "11111111",
+      "isOwner": true,
+      "joinDate": "2026-06-15"
+    },
+    {
+      "userId": 2,
+      "userName": "李四",
+      "userAccount": "22222222",
+      "isOwner": false,
+      "joinDate": "2026-06-15"
+    }
+  ]
+}
+```
+
+**认证要求**：✅ 需要Token
+
+**权限规则**：
+- 群成员可查看成员列表
+- 非成员仅可查看公开群的成员列表
+
+**前端处理**：
+- 展示成员卡片列表
+- 群主标记特殊显示
+- 可用于群成员管理功能
+
+---
+
+#### 3.6.8 搜索群聊
+
+**接口**：`GET /api/group/search?keyword={关键词}&page={页码}&size={每页大小}`
+
+**功能描述**：根据群名或群账号模糊搜索群聊，支持分页。不区分大小写，群名和群号均可匹配。
+
+**请求参数**：
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| keyword | String | 是 | - | 搜索关键词（最长20字符） |
+| page | Integer | 否 | 1 | 页码（从1开始） |
+| size | Integer | 否 | 10 | 每页大小（1-50） |
+
+**成功响应**：
+```json
+{
+    "code": 200,
+    "message": "搜索群聊成功",
+    "data": {
+        "content": [
+            {
+                "groupId": 1,
+                "account": "12345678",
+                "groupName": "技术交流群",
+                "ownerName": "张三",
+                "memberCount": 25,
+                "createDate": "2026-06-15",
+                "isOwner": false
+            }
+        ],
+        "totalElements": 1,
+        "totalPages": 1,
+        "number": 0,
+        "size": 10
+    }
+}
+```
+
+**错误响应**：
+| code | message | 说明 |
+|------|---------|------|
+| 400 | 搜索关键词不能为空 | keyword为空 |
+| 400 | 搜索关键词不能超过20个字符 | keyword超长 |
+| 400 | 每页大小必须在1-50之间 | size参数越界 |
+
+---
+
+#### 3.6.9 加入群聊
+
+**接口**：`POST /api/group/join/{groupId}`
+
+**功能描述**：通过群组ID加入群聊。成功后推送群成员加入通知给所有群成员。
+
+**路径参数**：
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| groupId | Long | 是 | 群组ID（从搜索接口获取） |
+
+**成功响应**：
+```json
+{
+    "code": 201,
+    "message": "加入群聊成功",
+    "data": {
+        "groupId": 1,
+        "account": "12345678",
+        "groupName": "技术交流群",
+        "ownerName": "张三",
+        "memberCount": 26,
+        "createDate": "2026-06-15",
+        "isOwner": false
+    }
+}
+```
+
+**WebSocket推送**：加入成功后，服务端向群内所有成员推送 `GROUP_MEMBER_JOIN` 通知：
+```json
+{
+    "type": "GROUP_MEMBER_JOIN",
+    "groupId": 1,
+    "senderId": 2,
+    "senderName": "李四",
+    "sendTime": "2026-06-17T10:30:00"
+}
+```
+
+**错误响应**：
+| code | message | 说明 |
+|------|---------|------|
+| 404 | 群聊不存在 | groupId无效 |
+| 409 | 您已经是该群聊的成员，无需重复加入 | 重复加入 |
+
+---
+
+#### 3.6.10 标记群聊消息已读
+
+**接口**：`POST /api/group/{groupId}/read/{recordId}`
+
+**功能描述**：将群聊中指定消息及之前的所有消息标记为已读。采用"最后已读消息ID"方案，recordId及之前的所有消息视为已读，之后的视为未读。也可通过 WebSocket 发送 `GROUP_READ_RECEIPT` 消息实现同等效果。
+
+**路径参数**：
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| groupId | Long | 是 | 群组ID |
+| recordId | Long | 是 | 已读到的消息记录ID |
+
+**成功响应**：
+```json
+{
+    "code": 200,
+    "message": "已读标记成功",
+    "data": null
+}
+```
+
+**错误响应**：
+| code | message | 说明 |
+|------|---------|------|
+| 404 | 群聊不存在 | groupId无效 |
+| 403 | 您不是该群聊的成员 | 非群成员无权标记 |
+
+---
+
+#### 3.6.11 获取群未读消息数
+
+**接口**：`GET /api/group/{groupId}/unread-count`
+
+**功能描述**：获取当前用户在指定群聊中的未读消息数量。计算方式：统计 `recordId > last_read_record_id` 的消息条数。
+
+**路径参数**：
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| groupId | Long | 是 | 群组ID |
+
+**成功响应**：
+```json
+{
+    "code": 200,
+    "message": "获取未读数成功",
+    "data": 5
+}
+```
+
+**错误响应**：
+| code | message | 说明 |
+|------|---------|------|
+| 403 | 您不是该群聊的成员 | 非群成员无权查询 |
+
+---
+
 ## 4. 计划中的API接口
 
-根据 `UserNeedControllers.md` 文档，以下接口计划在未来实现：
+以下接口计划在未来实现：
 
 ### 4.1 用户状态管理（管理员功能）
 
@@ -1318,14 +2008,20 @@ GET /api/friends/request/sent?page=1&size=20
 | `POST /api/friends/request/handle` | POST | 处理好友申请（同意/拒绝） | ✅ 已实现 |
 | `GET /api/friends/request/received` | GET | 查询收到的好友申请 | ✅ 已实现 |
 | `GET /api/friends/request/sent` | GET | 查询发出的好友申请 | ✅ 已实现 |
-| `DELETE /api/friend/{friendId}` | DELETE | 删除好友 | ⏳ 规划中 |
+| `DELETE /api/friends/remove/{friendId}` | DELETE | 删除好友（含聊天记录清理） | ✅ 已实现 |
 
 ### 4.7 群组系统接口（续）
 
-| 接口路径 | 方法 | 功能 | 优先级 |
-|---------|------|------|-------|
-| `GET /api/user/groups/{userId}` | GET | 获取群组列表 | 中 |
-| `POST /api/group/create` | POST | 创建群组 | 中 |
+| 接口路径 | 方法 | 功能 | 状态 |
+|---------|------|------|------|
+| `POST /api/group/create` | POST | 创建群组 | ✅ 已实现 |
+| `GET /api/group/list` | GET | 获取用户的群组列表 | ✅ 已实现 |
+| `GET /api/group/info/{groupId}` | GET | 获取群组详情（含成员列表） | ✅ 已实现 |
+| `DELETE /api/group/{groupId}` | DELETE | 解散/退出群组 | ✅ 已实现 |
+| `POST /api/group/message` | POST | 发送群聊消息 | ✅ 已实现 |
+| `GET /api/group/history/{groupId}` | GET | 获取群聊天记录（分页） | ✅ 已实现 |
+| `GET /api/group/members/{groupId}` | GET | 获取群成员列表 | ✅ 已实现 |
+| `GET /api/user/groups/{userId}` | GET | 获取指定用户群组列表 | ⏳ 规划中 |
 
 ### 4.8 用户档案接口
 
@@ -1346,6 +2042,9 @@ GET /api/friends/request/sent?page=1&size=20
 - ✅ 连接断开自动重连（前端指数退避）
 - ✅ 好友申请实时通知（`FRIEND_REQUEST`）
 - ✅ 好友申请结果通知（`FRIEND_REQUEST_RESULT`）
+- ✅ 群聊消息实时推送（`GROUP_MESSAGE`）
+- ✅ 群成员变动通知（`GROUP_MEMBER_JOIN` / `GROUP_MEMBER_LEAVE`）
+- ✅ 群聊消息已读回执（`GROUP_READ_RECEIPT` — 客户端上报已读位置）
 
 **前端配合要点**：
 - 登录成功后建立 WebSocket 连接（`ws://localhost:8080/ws/chat?token=xxx`）
@@ -2247,7 +2946,7 @@ async function safeApiCall(url, options) {
 1. **使用Postman**：手动构造请求查看响应
 2. **浏览器控制台**：查看Network面板的请求详情
 3. **后端日志**：查看控制台输出的日志信息
-4. **前端测试页面**：使用 `frontend-examples/` 下的HTML页面
+4. **前端测试页面**：使用 Postman 或其他 HTTP 客户端测试接口
 
 ---
 
@@ -2269,6 +2968,12 @@ async function safeApiCall(url, options) {
 | v1.1 | 2026-06-01 | 新增好友模块3个接口：好友列表、未读消息、聊天记录 | 后端团队 |
 | v1.2 | 2026-06-10 | 新增好友申请功能（5个接口 + WebSocket通知） | 后端团队 |
 | v1.3 | 2026-06-15 | 安全加固：修改密码Token失效、搜索参数约束、搜索响应去除password、认证失败统一JSON响应、WebSocket握手安全校验 | 后端团队 |
+| v1.4 | 2026-06-15 | 新增删除好友接口（DELETE /api/friends/remove/{friendId}），含聊天记录清理 | 后端团队 |
+| v1.5 | 2026-06-15 | 实现群组模块4个接口：创建群聊、群列表、群详情、解散/退出 | 后端团队 |
+| v1.6 | 2026-06-15 | 新增群聊消息3个接口：发送消息、聊天记录（分页）、成员列表 | 后端团队 |
+| v1.7 | 2026-06-15 | 实现 WebSocket 群聊实时通信：GROUP_MESSAGE 广播 + 成员变动通知 | 后端团队 |
+| v1.8 | 2026-06-17 | 新增群聊搜索（按群名/群号）、加入群聊接口；实现群聊消息已读功能（last_read_record_id方案 + GROUP_READ_RECEIPT）；群聊表新增member_count字段 | 后端团队 |
+| v1.9 | 2026-06-17 | REST发送消息补充WebSocket实时推送；修复未读消息误清零（getUnreadMessages不再修改已读状态）；好友列表返回最后消息预览+未读数；群列表返回最后消息预览+未读数 | 后端团队 |
 
 ---
 

@@ -11,15 +11,14 @@ src/
 ├── App.vue                           # 根组件（全局 Loading + Toast 注入）
 ├── views/                            # 页面级组件
 │   ├── Login.vue                     # 登录/注册页
-│   ├── Chat.vue                      # 聊天主页（容器组件）
-│   ├── Profile.vue                   # 个人资料页（待实现）
-│   └── Search.vue                    # 搜索用户页（待实现）
+│   └── Chat.vue                      # 聊天主页（容器组件）
 ├── components/
 │   ├── chat/                         # 聊天子组件
 │   │   ├── ChatLeftPanel.vue         # 左侧面板
 │   │   ├── ChatMessageArea.vue       # 消息区域
 │   │   ├── ChatNotificationPanel.vue # 通知面板
-│   │   ├── ChatSidePanel.vue         # 右侧面板
+│   │   ├── ChatSidePanel.vue         # 右侧面板（容器）
+│   │   ├── ChatProfileCard.vue       # 个人资料卡片
 │   │   └── index.js                  # 统一导出
 │   └── common/
 │       └── GlobalLoading.vue         # 全局加载遮罩
@@ -94,16 +93,6 @@ loading.hide();
 
 ---
 
-### Profile.vue（个人资料页）
-
-**当前状态**：个人资料功能已通过 ChatSidePanel 的 `mode='profile'` 实现，Profile.vue 路由页面仍保留为占位。首屏用户头像/用户名、聊天头部好友头像、搜索结果均为入口。
-
-### Search.vue（搜索用户页）⚠️ 待实现
-
-**规划功能**：独立搜索页面，搜索框 + 分页结果列表 + 用户卡片。
-
----
-
 ## 三、聊天子组件
 
 ### ChatLeftPanel.vue（左侧面板）
@@ -174,7 +163,7 @@ loading.hide();
 
 ### ChatSidePanel.vue（右侧面板）
 
-**职责**：添加好友 / 创建群聊 / 加入群聊 / 个人资料，四种子模式切换。
+**职责**：添加好友 / 创建群聊 / 加入群聊 / 个人资料，四种子模式容器。Profile 模式委托给 `ChatProfileCard`。
 
 | Props | 类型 | 说明 |
 |-------|------|------|
@@ -186,9 +175,9 @@ loading.hide();
 | `friends` | `Array` | 好友列表（判断"已是好友"） |
 | `sentRequests` | `Array` | 已发送的好友申请列表 |
 | `sendingRequestIds` | `Set` | 正在发送申请的 userId 集合 |
-| `profileUser` | `Object` | 当前查看的用户（仅 profile 模式） |
-| `profileContext` | `String` | `'self'` / `'friend'` / `'stranger'`（仅 profile 模式） |
-| `profileLoading` | `Boolean` | Profile 操作加载中 |
+| `profileUser` | `Object` | 当前查看的用户（透传给 ChatProfileCard） |
+| `profileContext` | `String` | 透传给 ChatProfileCard |
+| `profileLoading` | `Boolean` | 透传给 ChatProfileCard |
 
 | Events | 说明 |
 |--------|------|
@@ -197,17 +186,36 @@ loading.hide();
 | `add-friend` | 添加好友（friend 模式），参数：用户对象 |
 | `create-group` | 创建群聊 |
 | `join-group` | 加入群聊 |
-| `edit-username` | 修改用户名（profile-self），参数：`newName` |
-| `change-password` | 修改密码（profile-self），参数：`{oldPassword, newPassword}` |
-| `send-message-to` | 发消息（profile-friend），参数：user 对象 |
-| `add-friend-from-profile` | 添加好友（profile-stranger），参数：user 对象 |
+| `edit-username` / `change-password` / `send-message-to` / `add-friend-from-profile` / `delete-friend` / `logout` | 由 ChatProfileCard 透传 |
 | `view-profile` | 查看用户资料（搜索结果点击），参数：user 对象 |
-| `logout` | 登出（profile-self 卡片内） |
 
-**Profile 模式三种视角**：
-- `self`（本人）：头像/用户名/账号/注册日期，用户名 inline 编辑，可展开修改密码，底部登出按钮
-- `friend`（好友）：头像/在线状态/用户名/账号/注册日期，底部「发消息」按钮
-- `stranger`（陌生人）：头像/在线状态/用户名/账号，底部「添加好友」按钮
+---
+
+### ChatProfileCard.vue（个人资料卡片）
+
+**职责**：展示用户资料，支持三种视角的自适应 UI。
+
+| Props | 类型 | 说明 |
+|-------|------|------|
+| `profileUser` | `Object` | 当前查看的用户对象 |
+| `profileContext` | `String` | `'self'` / `'friend'` / `'stranger'` |
+| `profileLoading` | `Boolean` | 操作加载中 |
+
+| Events | 说明 |
+|--------|------|
+| `edit-username` | 修改用户名，参数：`newName` |
+| `change-password` | 修改密码，参数：`{oldPassword, newPassword}` |
+| `send-message-to` | 发消息，参数：user |
+| `add-friend-from-profile` | 添加好友，参数：user |
+| `delete-friend` | 删除好友，参数：user |
+| `logout` | 登出 |
+
+**三种视角**：
+- `self`：用户名 inline 编辑、密码修改（可展开）、登出
+- `friend`：用户信息 + 发消息 + 删除好友
+- `stranger`：用户信息 + 添加好友
+
+**内部状态**：编辑用户名、修改密码的表单状态和验证逻辑均在组件内部管理，不污染父组件。
 
 ---
 
@@ -274,7 +282,7 @@ Chat.vue（容器）
   └── ChatSidePanel
         props: visible, mode, searchResults, profileUser, profileContext...
         events: close, search, add-friend, edit-username, change-password,
-                send-message-to, add-friend-from-profile, view-profile, logout
+                send-message-to, add-friend-from-profile, delete-friend, view-profile, logout
 ```
 
 **设计原则**：

@@ -11,7 +11,8 @@ src/api/
 ├── request.js       # Axios 封装（拦截器、错误处理、Token 注入）
 ├── auth.js          # 认证接口（登录、注册、登出）
 ├── user.js          # 用户接口（资料、搜索、在线人数）
-├── friend.js        # 好友接口（列表、消息、聊天记录）
+├── friend.js        # 好友接口（列表、消息、聊天记录、申请）
+├── group.js         # 群组接口（创建、列表、详情、解散/退出、消息、聊天记录、成员）
 └── heartbeat.js     # 心跳接口
 ```
 
@@ -38,14 +39,19 @@ Authorization: Bearer {token}
 
 ### 2.3 响应拦截器
 
+成功响应（HTTP 2xx）按 `code` 分三类处理；HTTP 错误响应统一提取后端 `message` 作为 reject 信息。
+
 | 响应码 | 处理 |
 |--------|------|
-| `code: 200/201` | 直接返回 `response.data`（即 `{code, message, data}`） |
-| `code: 401` | 清除 Token → 跳转登录页 → reject |
-| 其他业务错误 | `console.error` → reject |
-| HTTP 401 | 同 `code: 401` |
-| HTTP 403/404/500 | `console.error` → reject |
-| 超时 | `console.error('请求超时')` → reject |
+| `code: 200/201/202/204/206` | 直接返回 `response.data`（即 `{code, message, data}`） |
+| `code: 401` | 完整清除认证状态（Token + 心跳 + WebSocket）→ 跳转登录页 → reject |
+| 其他 `code` 业务错误 | `console.error` → `reject(new Error(res.message))` |
+| HTTP 401 | 同上，调 `handleUnauthorized()` |
+| HTTP 其他状态 | 提取 `error.response.data.message` 作为错误消息 reject；无则降级到 HTTP 状态描述 |
+| 超时 (`ECONNABORTED`) | `reject(new Error('请求超时，请稍后重试'))` |
+| 网络断开 | `reject(new Error('网络连接失败，请检查网络'))` |
+
+**关键改进（2025-06-17）**：HTTP 错误统一提取后端返回的 `message` 字段作为 `Error` 信息，调用方 `catch` 中拿到的 `error.message` 即为后端真实错误描述，不再是 Axios 泛化的 `"Request failed with status code xxx"`。
 
 ---
 
@@ -194,6 +200,7 @@ wsManager.connect();
 | type | 字段 | 说明 |
 |------|------|------|
 | `PRIVATE_MESSAGE` | `receiverId`, `content` | 发送私聊消息 |
+| `GROUP_MESSAGE` | `groupId`, `content` | 发送群聊消息 |
 | `READ_RECEIPT` | `recordId` | 发送已读回执 |
 | `HEARTBEAT` | — | WebSocket 心跳 |
 
@@ -207,6 +214,9 @@ wsManager.connect();
 | `FRIEND_REQUEST` | `senderId`, `senderName`, `requestId`, `requestMessage`, `sendTime` | 收到好友申请 |
 | `FRIEND_REQUEST_RESULT` | `senderId`, `senderName`, `requestId`, `content`(accepted\|rejected), `sendTime` | 申请处理结果 |
 | `READ_RECEIPT` | `senderId`, `recordId` | 对方已读 |
+| `GROUP_MESSAGE` | `senderId`, `senderName`, `groupId`, `content`, `sendTime`, `recordId` | 收到群聊消息 |
+| `GROUP_MEMBER_JOIN` | `groupId`, `groupName`, `senderId`, `senderName` | 群成员加入 |
+| `GROUP_MEMBER_LEAVE` | `groupId`, `groupName`, `senderId`, `senderName` | 群成员退出/群解散 |
 | `ERROR` | `error` | 错误通知 |
 
 ### 7.3 事件订阅

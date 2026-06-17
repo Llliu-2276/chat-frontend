@@ -72,7 +72,7 @@
           @send="onSendMessage"
           @scroll-top="handleScroll"
           @back-to-list="mobileView = 'list'"
-          @view-profile="onViewProfile"
+          @view-profile="viewProfile"
           ref="messageAreaRef"
         />
       </template>
@@ -99,7 +99,9 @@
         @change-password="handleChangePassword"
         @send-message-to="handleSendMessageTo"
         @add-friend-from-profile="handleAddFriendFromProfile"
-        @view-profile="onViewProfile"
+        @delete-friend="handleDeleteFriend"
+        @dissolve-or-leave-group="handleDissolveOrLeaveGroup"
+        @view-profile="viewProfile"
         @logout="handleLogout"
       />
     </div>
@@ -119,7 +121,6 @@ import { ref, inject, onMounted, onBeforeUnmount } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import { wsManager } from '@/utils/websocket';
-import { updateUserName, changePassword } from '@/api/user';
 import { ElMessageBox } from 'element-plus';
 
 import ChatLeftPanel from '@/components/chat/ChatLeftPanel.vue';
@@ -130,6 +131,8 @@ import ChatNotificationPanel from '@/components/chat/ChatNotificationPanel.vue';
 import { useFriendList } from '@/composables/useFriendList';
 import { useChatMessages } from '@/composables/useChatMessages';
 import { useNotifications } from '@/composables/useNotifications';
+import { useSidePanel } from '@/composables/useSidePanel';
+import { useProfile } from '@/composables/useProfile';
 
 const userStore = useUserStore();
 const router = useRouter();
@@ -142,7 +145,7 @@ const {
   friendsExpanded, groupsExpanded, notificationsExpanded,
   toggleFriends, toggleGroups, toggleNotifications,
   onSelectFriend: _selectFriend, onSelectGroup: _selectGroup,
-  loadFriends, fetchUnreadMessages,
+  loadFriends, loadGroups, fetchUnreadMessages,
 } = useFriendList(toast);
 
 // 消息区域组件模板 ref
@@ -158,47 +161,32 @@ const {
   loadingReceived, loadingSent,
   loadingMoreReceived, loadingMoreSent,
   hasMoreReceived, hasMoreSent,
-  pendingRequestCount, sendingRequestIds,
-  showSidePanel, sidePanelMode, groupSubMode,
-  panelSearchResults, panelSearching,
+  pendingRequestCount,
   openNotifications,
   loadMoreReceived, loadMoreSent,
   onHandleRequest,
-  handleGroupAction, openSidePanel, closeSidePanel,
-  handlePanelSearch, handleAddFriend,
-  handleCreateGroup, handleJoinGroup,
   _cleanupNotifications,
 } = useNotifications({ loadFriends, activeView, chatTarget, mobileView, toast });
 
-// ==================== Profile 状态 ====================
-const profileUser = ref(null);         // 当前查看的用户对象
-const profileContext = ref('self');    // 'self' | 'friend' | 'stranger'
-const profileLoading = ref(false);     // Profile 操作加载中
-/** 面板导航历史栈，用于 profile 返回上一视图 */
-const panelHistory = ref([]);
+const {
+  showSidePanel, sidePanelMode, groupSubMode,
+  panelSearchResults, panelSearching,
+  sendingRequestIds,
+  handleGroupAction, openSidePanel, closeSidePanel,
+  handlePanelSearch, handleAddFriend,
+  handleCreateGroup, handleJoinGroup,
+  _cleanupSidePanel,
+} = useSidePanel({ toast, sentRequests, loadGroups });
 
-/** 判断用户是否为好友 */
-function isFriend(userId) {
-  return friends.value.some(f => f.userId === userId);
-}
-
-/**
- * 关闭面板或返回上一视图
- * 如果当前是 profile 模式且从其他视图导航而来，返回到上一视图而非直接关闭
- */
-function handlePanelClose() {
-  if (sidePanelMode.value === 'profile' && panelHistory.value.length > 0) {
-    const prev = panelHistory.value.pop();
-    sidePanelMode.value = prev.mode;
-    groupSubMode.value = prev.groupSubMode;
-    profileUser.value = null;
-    profileContext.value = 'self';
-  } else {
-    closeSidePanel();
-    panelHistory.value = [];
-    profileUser.value = null;
-  }
-}
+const {
+  profileUser, profileContext, profileLoading,
+  isFriend,
+  handlePanelClose,
+  openSelfProfile, onViewProfile, onViewGroupProfile,
+  handleEditUsername, handleChangePassword, handleDeleteFriend,
+  handleDissolveOrLeaveGroup,
+  handleSendMessageTo: _sendMessageTo, handleAddFriendFromProfile: _addFriendFromProfile,
+} = useProfile({ toast, friends, chatTarget, chatType, resetChat, closeSidePanel, loadFriends, sidePanelMode, groupSubMode, showSidePanel });
 
 // ==================== 登出 ====================
 const isLoggingOut = ref(false);
@@ -209,6 +197,7 @@ async function handleLogout() {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
       type: 'warning',
+      customClass: 'confirm-dialog',
     });
   } catch { return; }
   isLoggingOut.value = true;
@@ -217,89 +206,26 @@ async function handleLogout() {
   finally { isLoggingOut.value = false; }
 }
 
-// ==================== Profile 操作 ====================
-
-/** 打开本人的个人资料 */
-function openSelfProfile() {
-  profileUser.value = userStore.userInfo;
-  profileContext.value = 'self';
-  profileLoading.value = false;
-  showSidePanel.value = true;
-  sidePanelMode.value = 'profile';
-}
-
 /**
- * 查看用户资料（从搜索结果或聊天头部）
- * @param {Object} user - 要查看的用户对象
+ * 统一资料查看入口——根据对象类型分发到用户资料或群聊资料
+ * @param {Object} target - 用户或群聊对象
  */
-function onViewProfile(user) {
-  if (!user?.userId) return;
-  // 如果是当前用户自己，走 self 视角
-  if (user.userId === userStore.userId) {
-    openSelfProfile();
-    return;
-  }
-  // 从其他面板视图导航到 profile 时，记录当前视图以便返回
-  if (showSidePanel.value && sidePanelMode.value !== 'profile') {
-    panelHistory.value.push({
-      mode: sidePanelMode.value,
-      groupSubMode: groupSubMode.value,
-    });
-  }
-  profileUser.value = user;
-  profileContext.value = isFriend(user.userId) ? 'friend' : 'stranger';
-  profileLoading.value = false;
-  showSidePanel.value = true;
-  sidePanelMode.value = 'profile';
-}
-
-/**
- * 修改用户名
- * @param {string} newName - 新的用户名
- */
-async function handleEditUsername(newName) {
-  profileLoading.value = true;
-  try {
-    const res = await updateUserName({ userName: newName });
-    if (res.code === 200) {
-      userStore.updateUserInfo({ userName: newName });
-      profileUser.value = { ...profileUser.value, userName: newName };
-      toast.success('用户名修改成功');
-    }
-  } catch (error) {
-    toast.error(error.message || '修改失败');
-  } finally {
-    profileLoading.value = false;
+function viewProfile(target) {
+  if (target?.groupId) {
+    onViewGroupProfile(target);
+  } else {
+    onViewProfile(target);
   }
 }
 
-/**
- * 修改密码
- * @param {Object} data - { oldPassword, newPassword }
- */
-async function handleChangePassword({ oldPassword, newPassword }) {
-  profileLoading.value = true;
-  try {
-    await changePassword({ oldPassword, newPassword });
-    toast.success('密码修改成功，请重新登录');
-    // 完整登出链条：清状态 + 跳转登录页
-    userStore.clearUserState();
-    router.push('/login');
-  } catch (error) {
-    toast.error(error.message || '密码修改失败');
-    profileLoading.value = false;
-  }
-}
-
+// ==================== 资料卡快捷操作（编排层） ====================
 /**
  * 从资料卡发消息给用户
  * @param {Object} user - 目标用户
  */
 function handleSendMessageTo(user) {
-  if (!user?.userId) return;
-  closeSidePanel();
-  // 如果该用户不在好友列表中（理论上不会发生在 friend 视角），仍然尝试选中
-  onSelectFriend(user);
+  const result = _sendMessageTo(user);
+  if (result) onSelectFriend(result);
 }
 
 /**
@@ -307,7 +233,8 @@ function handleSendMessageTo(user) {
  * @param {Object} user - 目标用户
  */
 function handleAddFriendFromProfile(user) {
-  handleAddFriend(user);
+  const result = _addFriendFromProfile(user);
+  if (result) handleAddFriend(result);
 }
 
 // ==================== 好友/群聊选择（跨 composable 编排） ====================
@@ -336,6 +263,7 @@ onMounted(async () => {
   if (!wsManager.isConnected && !wsManager.isConnecting) wsManager.connect();
 
   await loadFriends();
+  await loadGroups();
   await fetchUnreadMessages();
   unreadTimer = setInterval(fetchUnreadMessages, 30000);
   friendListTimer = setInterval(loadFriends, 60000);
@@ -345,6 +273,7 @@ onBeforeUnmount(() => {
   if (unreadTimer) clearInterval(unreadTimer);
   if (friendListTimer) clearInterval(friendListTimer);
   _cleanupNotifications();
+  _cleanupSidePanel();
 });
 </script>
 
@@ -501,6 +430,56 @@ onBeforeUnmount(() => {
 }
 .add-friend-dialog .el-button--default {
   border-radius: 20px;
+  padding: 8px 24px;
+  font-weight: 600;
+  color: #666;
+}
+
+/* ==================== 确认对话框（登出/删除好友等）— 磨砂玻璃卡片 ==================== */
+.confirm-dialog {
+  border-radius: 16px !important;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.45) !important;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.06) !important;
+}
+.confirm-dialog .el-message-box__header {
+  padding: 22px 24px 12px;
+  border-bottom: none;
+}
+.confirm-dialog .el-message-box__title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #333;
+}
+.confirm-dialog .el-message-box__content {
+  padding: 0 24px 20px;
+}
+.confirm-dialog .el-message-box__message p {
+  font-size: 14px;
+  color: #555;
+  line-height: 1.6;
+}
+.confirm-dialog .el-message-box__btns {
+  padding: 12px 24px 20px;
+}
+.confirm-dialog .el-button--primary {
+  background: rgba(56, 239, 125, 0.22);
+  color: #333;
+  border: 1.5px solid rgba(56, 239, 125, 0.45);
+  border-radius: 8px;
+  padding: 8px 24px;
+  font-weight: 600;
+}
+.confirm-dialog .el-button--primary:hover {
+  background: rgba(56, 239, 125, 0.35);
+  box-shadow: 0 2px 8px rgba(17, 153, 142, 0.2);
+  transform: translateY(-1px);
+}
+.confirm-dialog .el-button--default {
+  border-radius: 8px;
   padding: 8px 24px;
   font-weight: 600;
   color: #666;

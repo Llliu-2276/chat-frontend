@@ -7,6 +7,7 @@
  */
 import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import { getFriendList, getUnreadMessages, getChatHistory } from '@/api/friend';
+import { getGroupList, getGroupHistory } from '@/api/group';
 import { wsManager } from '@/utils/websocket';
 
 /**
@@ -126,6 +127,43 @@ export function useFriendList(toast) {
     } catch (e) { console.error('获取未读消息失败:', e); }
   }
 
+  /**
+   * 加载群聊列表
+   * 首次加载时会获取每个群聊的最后一条消息
+   */
+  async function loadGroups() {
+    try {
+      const res = await getGroupList();
+      if (res.code === 200) {
+        const isFirstLoad = groups.value.length === 0;
+        groups.value = (res.data || []).map(g => {
+          const existing = groups.value.find(old => old.groupId === g.groupId);
+          return {
+            ...g,
+            lastMessage: existing?.lastMessage || '',
+            lastMessageTime: existing?.lastMessageTime || '',
+            unreadCount: existing?.unreadCount || 0,
+          };
+        });
+
+        if (isFirstLoad) {
+          await Promise.allSettled(
+            groups.value.map(async (g) => {
+              try {
+                const hRes = await getGroupHistory(g.groupId, { page: 1, size: 1 });
+                if (hRes.code === 200 && hRes.data?.content?.length > 0) {
+                  const msg = hRes.data.content[0];
+                  g.lastMessage = msg.senderName + ': ' + msg.content;
+                  g.lastMessageTime = msg.sendTime;
+                }
+              } catch (e) { /* 单个群聊加载失败不影响整体 */ }
+            })
+          );
+        }
+      }
+    } catch (e) { console.error('加载群聊列表失败:', e); }
+  }
+
   // ==================== WebSocket 事件处理 ====================
   /** 处理好友上线通知 */
   function handleWsFriendOnline(msg) {
@@ -156,17 +194,51 @@ export function useFriendList(toast) {
     }
   }
 
+  /**
+   * 处理群聊消息（仅更新侧边栏状态）
+   * - 当前群聊 → 清除未读计数
+   * - 非当前群聊 → 增加未读计数 + 更新最后消息
+   */
+  function handleWsGroupMessage(msg) {
+    const { senderId, senderName, groupId, content, sendTime } = msg;
+    const group = groups.value.find(g => g.groupId === groupId);
+    if (!group) return;
+    const text = senderName + ': ' + content;
+    if (!group.lastMessageTime || sendTime > group.lastMessageTime) {
+      group.lastMessage = text;
+      group.lastMessageTime = sendTime;
+    }
+    const isCurrentChat = chatTarget.value?.groupId === groupId && chatType.value === 'group';
+    if (isCurrentChat) {
+      group.unreadCount = 0;
+    } else {
+      group.unreadCount = (group.unreadCount || 0) + 1;
+    }
+  }
+
+  /** 处理群成员加入/退出通知（刷新群列表） */
+  function handleWsGroupMemberChange(msg) {
+    toast.info(`「${msg.groupName}」${msg.type === 'GROUP_MEMBER_JOIN' ? '有新成员加入' : '有成员退出'}`);
+    loadGroups();
+  }
+
   // ==================== WebSocket 生命周期 ====================
   onMounted(() => {
     wsManager.on('FRIEND_ONLINE', handleWsFriendOnline);
     wsManager.on('FRIEND_OFFLINE', handleWsFriendOffline);
     wsManager.on('PRIVATE_MESSAGE', handleWsIncomingMessage);
+    wsManager.on('GROUP_MESSAGE', handleWsGroupMessage);
+    wsManager.on('GROUP_MEMBER_JOIN', handleWsGroupMemberChange);
+    wsManager.on('GROUP_MEMBER_LEAVE', handleWsGroupMemberChange);
   });
 
   onBeforeUnmount(() => {
     wsManager.off('FRIEND_ONLINE', handleWsFriendOnline);
     wsManager.off('FRIEND_OFFLINE', handleWsFriendOffline);
     wsManager.off('PRIVATE_MESSAGE', handleWsIncomingMessage);
+    wsManager.off('GROUP_MESSAGE', handleWsGroupMessage);
+    wsManager.off('GROUP_MEMBER_JOIN', handleWsGroupMemberChange);
+    wsManager.off('GROUP_MEMBER_LEAVE', handleWsGroupMemberChange);
   });
 
   // ==================== 侦听器 ====================
@@ -197,6 +269,7 @@ export function useFriendList(toast) {
     onSelectFriend,
     onSelectGroup,
     loadFriends,
+    loadGroups,
     fetchUnreadMessages,
   };
 }

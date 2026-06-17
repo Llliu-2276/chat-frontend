@@ -31,43 +31,49 @@
 
       <!-- 合并列表 -->
       <template v-else>
-        <div v-for="req in mergedRequests" :key="req._key"
-             class="message-row" :class="req._isSelf ? 'is-self' : 'is-other'">
-          <!-- 头像 -->
-          <div class="bubble-avatar avatar avatar-sm"
-               :style="req._isSelf
-                 ? { background: 'linear-gradient(135deg, #11998e, #38ef7d)', color: '#fff' }
-                 : { background: '#9df3c4', color: '#333' }">
-            {{ req._displayName?.charAt(0) || '?' }}
+        <template v-for="item in requestsWithDividers" :key="item._divider ? item.key : item._key">
+          <!-- 时间分隔线 -->
+          <div v-if="item._divider" class="time-divider">
+            <span>{{ item.label }}</span>
           </div>
-          <!-- 气泡内容 -->
-          <div class="bubble-content">
-            <span class="bubble-sender-name">{{ req._headerLabel }}</span>
-            <div class="bubble" :class="req._isSelf ? 'self-bubble' : 'other-bubble'">
-              <div class="req-account-row">
-                <span class="req-label">账号：</span>{{ req._account }}
+          <!-- 申请气泡 -->
+          <div v-else class="message-row" :class="item._isSelf ? 'is-self' : 'is-other'">
+            <!-- 头像 -->
+            <div class="bubble-avatar avatar avatar-sm"
+                 :style="item._isSelf
+                   ? { background: 'linear-gradient(135deg, #11998e, #38ef7d)', color: '#fff' }
+                   : { background: '#9df3c4', color: '#333' }">
+              {{ item._displayName?.charAt(0) || '?' }}
+            </div>
+            <!-- 气泡内容 -->
+            <div class="bubble-content">
+              <span class="bubble-sender-name">{{ item._headerLabel }}</span>
+              <div class="bubble" :class="item._isSelf ? 'self-bubble' : 'other-bubble'">
+                <div class="req-account-row">
+                  <span class="req-label">账号：</span>{{ item._account }}
+                </div>
+                <div v-if="item.message" class="req-message">{{ item.message }}</div>
+                <div class="bubble-footer">
+                  <span class="bubble-time">{{ formatRequestTime(item.createTime) }}</span>
+                  <span class="req-status-tag" :class="statusClass(item.status)">
+                    {{ item.statusDescription }}
+                  </span>
+                </div>
               </div>
-              <div v-if="req.message" class="req-message">{{ req.message }}</div>
-              <div class="bubble-footer">
-                <span class="bubble-time">{{ formatRequestTime(req.createTime) }}</span>
-                <span class="req-status-tag" :class="statusClass(req.status)">
-                  {{ req.statusDescription }}
-                </span>
+              <!-- 收到的申请且待处理 → 操作按钮 -->
+              <div v-if="!item._isSelf && item.status === 0" class="bubble-actions">
+                <button class="action-btn accept-btn"
+                        @click="$emit('handle-request', item.requestId, true)">
+                  <el-icon><Select /></el-icon> 同意
+                </button>
+                <button class="action-btn reject-btn"
+                        @click="$emit('handle-request', item.requestId, false)">
+                  <el-icon><CloseBold /></el-icon> 拒绝
+                </button>
               </div>
             </div>
-            <!-- 收到的申请且待处理 → 操作按钮 -->
-            <div v-if="!req._isSelf && req.status === 0" class="bubble-actions">
-              <button class="action-btn accept-btn"
-                      @click="$emit('handle-request', req.requestId, true)">
-                <el-icon><Select /></el-icon> 同意
-              </button>
-              <button class="action-btn reject-btn"
-                      @click="$emit('handle-request', req.requestId, false)">
-                <el-icon><CloseBold /></el-icon> 拒绝
-              </button>
-            </div>
           </div>
-        </div>
+        </template>
 
         <!-- 加载更多 -->
         <div v-if="!hasMoreReceived && !hasMoreSent" class="no-more">— 没有更多了 —</div>
@@ -178,6 +184,61 @@ function formatRequestTime(t) {
   if (datePart === todayStr) return timePart;
   return normalized.slice(5, 10) + ' ' + timePart;
 }
+
+/**
+ * 格式化时间分隔线标签
+ * @param {string} timeStr - ISO时间字符串
+ * @returns {string}
+ */
+function formatDividerLabel(timeStr) {
+  if (!timeStr) return '';
+  const d = new Date(timeStr.replace('T', ' '));
+  if (isNaN(d.getTime())) return '';
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today - 86400000);
+  const msgDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+
+  if (msgDate.getTime() === today.getTime()) return time;
+  if (msgDate.getTime() === yesterday.getTime()) return `昨天 ${time}`;
+
+  const dayDiff = Math.floor((today - msgDate) / 86400000);
+  if (dayDiff < 7) {
+    const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+    return `${weekDays[d.getDay()]} ${time}`;
+  }
+
+  if (d.getFullYear() === now.getFullYear()) {
+    return `${d.getMonth() + 1}月${d.getDate()}日 ${time}`;
+  }
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${time}`;
+}
+
+/**
+ * 带时间分隔线的申请列表
+ * 相邻申请间隔超过 5 分钟时自动插入时间标签
+ */
+const requestsWithDividers = computed(() => {
+  const list = [];
+  const GAP_MS = 5 * 60 * 1000;
+  const items = mergedRequests.value;
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (i === 0) {
+      list.push({ _divider: true, key: 'div-first', label: formatDividerLabel(item.createTime) });
+    } else {
+      const prevTime = new Date(items[i - 1].createTime?.replace('T', ' ')).getTime();
+      const currTime = new Date(item.createTime?.replace('T', ' ')).getTime();
+      if (!isNaN(prevTime) && !isNaN(currTime) && currTime - prevTime > GAP_MS) {
+        list.push({ _divider: true, key: `div-${item.requestId}`, label: formatDividerLabel(item.createTime) });
+      }
+    }
+    list.push(item);
+  }
+  return list;
+});
 </script>
 
 <style scoped>
@@ -303,9 +364,9 @@ function formatRequestTime(t) {
   padding: 0 4px;
 }
 
-/* ==================== 气泡本体 ==================== */
+/* ==================== 气泡本体（与 ChatMessageArea 气泡风格一致） ==================== */
 .bubble {
-  padding: 12px 16px;
+  padding: 10px 16px;
   font-size: 14px;
   line-height: 1.6;
   word-break: break-word;
@@ -321,10 +382,11 @@ function formatRequestTime(t) {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 .self-bubble {
-  background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-  color: #fff;
+  background: rgba(255, 255, 255, 0.85);
+  color: #333;
+  border: 1.5px solid #47b687;
   border-radius: 16px 4px 16px 16px;
-  box-shadow: 0 2px 8px rgba(17, 153, 142, 0.2);
+  box-shadow: 0 2px 10px rgba(56, 239, 125, 0.25), 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 /* 气泡内：账号行 */
@@ -348,7 +410,7 @@ function formatRequestTime(t) {
   background: rgba(0, 0, 0, 0.06);
 }
 .self-bubble .req-message {
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.06);
 }
 
 /* 气泡底部：时间 + 状态 */
@@ -363,7 +425,7 @@ function formatRequestTime(t) {
   opacity: 0.55;
 }
 .other-bubble .bubble-time { color: rgba(0, 0, 0, 0.45); }
-.self-bubble .bubble-time { color: rgba(255, 255, 255, 0.75); }
+.self-bubble .bubble-time { color: rgba(0, 0, 0, 0.45); }
 
 .req-status-tag {
   font-size: 11px;
@@ -386,19 +448,19 @@ function formatRequestTime(t) {
 }
 /* 自己气泡内的状态标签 */
 .self-bubble .req-status-tag.pending {
-  background: rgba(255, 255, 255, 0.25);
-  color: #fff;
+  background: rgba(230, 162, 60, 0.18);
+  color: #b06d0c;
 }
 .self-bubble .req-status-tag.accepted {
-  background: rgba(255, 255, 255, 0.3);
-  color: #fff;
+  background: rgba(17, 153, 142, 0.18);
+  color: #0e8a7e;
 }
 .self-bubble .req-status-tag.rejected {
-  background: rgba(255, 255, 255, 0.18);
-  color: rgba(255, 255, 255, 0.8);
+  background: rgba(0, 0, 0, 0.08);
+  color: #888;
 }
 
-/* ==================== 操作按钮（收到申请时） ==================== */
+/* ==================== 操作按钮（收到申请时，与全局按钮风格一致） ==================== */
 .bubble-actions {
   display: flex;
   gap: 8px;
@@ -406,9 +468,8 @@ function formatRequestTime(t) {
   padding: 0 4px;
 }
 .action-btn {
-  padding: 5px 14px;
-  border: none;
-  border-radius: 16px;
+  padding: 6px 16px;
+  border-radius: 8px;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -420,35 +481,41 @@ function formatRequestTime(t) {
   gap: 4px;
 }
 .action-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
+  transform: none !important;
 }
 .accept-btn {
-  background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-  color: #fff;
+  background: rgba(56, 239, 125, 0.22);
+  color: #333;
+  border: 1.5px solid rgba(56, 239, 125, 0.45);
 }
 .accept-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(17, 153, 142, 0.3);
+  background: rgba(56, 239, 125, 0.35);
+  transform: translateY(-2px);
+  box-shadow: 0 2px 8px rgba(17, 153, 142, 0.2);
 }
 .reject-btn {
-  background: rgba(0, 0, 0, 0.06);
-  color: #999;
+  background: rgba(224, 83, 83, 0.18);
+  color: #333;
+  border: 1.5px solid rgba(224, 83, 83, 0.45);
 }
 .reject-btn:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.1);
-  color: #666;
+  background: rgba(224, 83, 83, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 2px 8px rgba(224, 83, 83, 0.2);
 }
 
-/* ==================== 加载更多 ==================== */
+/* ==================== 加载更多（与全局按钮风格一致） ==================== */
 .load-more-btn {
   align-self: center;
   padding: 8px 24px;
-  border: 1px solid rgba(17, 153, 142, 0.3);
-  border-radius: 20px;
-  background: transparent;
-  color: #11998e;
   font-size: 13px;
+  font-weight: 600;
+  color: #333;
+  background: rgba(56, 239, 125, 0.22);
+  border: 1.5px solid rgba(56, 239, 125, 0.45);
+  border-radius: 8px;
   cursor: pointer;
   transition: all 0.3s ease;
   display: flex;
@@ -457,17 +524,39 @@ function formatRequestTime(t) {
   margin-top: 4px;
 }
 .load-more-btn:hover:not(:disabled) {
-  background: rgba(17, 153, 142, 0.06);
+  background: rgba(56, 239, 125, 0.35);
+  transform: translateY(-2px);
+  box-shadow: 0 2px 8px rgba(17, 153, 142, 0.2);
 }
 .load-more-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
+  transform: none !important;
 }
-.no-more {
+.no-more, .time-divider {
   text-align: center;
   font-size: 12px;
-  color: #ccc;
+  color: #bbb;
   padding: 8px 0;
+  user-select: none;
+}
+.time-divider span {
+  position: relative;
+}
+.time-divider span::before,
+.time-divider span::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 32px;
+  height: 1px;
+  background: rgba(0, 0, 0, 0.08);
+}
+.time-divider span::before {
+  right: calc(100% + 10px);
+}
+.time-divider span::after {
+  left: calc(100% + 10px);
 }
 
 /* ==================== 响应式 ==================== */

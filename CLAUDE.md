@@ -40,7 +40,21 @@ Vue Views (Chat.vue as container, Login.vue standalone)
       → Backend (:8080)
 ```
 
-**Chat.vue is the orchestrator** — it initializes all three composables, wires them together, and passes data down to four child components via props/emits. The composables own all state (refs), API calls, and WebSocket event subscriptions; Chat.vue itself holds only logout logic, cross-composable wiring (e.g., selecting a friend triggers `resetChat()` + `loadChatHistory()`), and timer lifecycle (30s unread poll, 60s friend list refresh).
+**Chat.vue is the orchestrator** — it initializes all three composables, wires them together, and passes data down to four child components via props/emits. The composables own all state (refs), API calls, and WebSocket event subscriptions; Chat.vue itself holds only logout logic, cross-composable wiring (e.g., selecting a friend triggers `resetChat()` + `loadChatHistory()`), profile panel navigation with a history stack (supports back-navigation from profile to previous panel view), and timer lifecycle (30s unread poll, 60s friend list refresh).
+
+### Composable Dependency Injection
+
+Composables receive their dependencies in two styles:
+- **Individual params**: `useChatMessages(chatTarget, chatType, friends, messageAreaRef, userStore, toast)` and `useFriendList(toast)` — used when dependencies are plain refs/objects without circular references.
+- **Options object**: `useNotifications({ loadFriends, activeView, chatTarget, mobileView, toast })` — receives `loadFriends` as a callback (not a ref) because notifications need to trigger friend-list refresh on accept, creating a circular dependency that the callback pattern resolves.
+
+### PRIVATE_MESSAGE Dual-Handler Pattern
+
+Both `useChatMessages` and `useFriendList` register handlers for `PRIVATE_MESSAGE` — this is deliberate, not a bug:
+- **`useChatMessages`** handles message display: replaces optimistic temp messages on echo-back, appends incoming messages, auto-sends `READ_RECEIPT` for current-chat messages, scrolls to bottom.
+- **`useFriendList`** handles sidebar state: clears unread count when the message is from the currently-selected friend, increments unread count otherwise.
+
+Both handlers run independently; each handles the message from its own perspective. When modifying either handler, ensure they don't conflict (e.g., double-incrementing unread counts).
 
 ## Key Architectural Patterns
 
@@ -68,13 +82,17 @@ All business logic lives in composables under `src/composables/`. Each composabl
 - Registers WebSocket listeners in `onMounted`, removes them in `onBeforeUnmount`
 - Exposes state + methods as a plain object
 
+**Exception — `useNotifications` cleanup**: This composable does NOT use `onBeforeUnmount` for WS cleanup. Instead it exports `_cleanupNotifications()` which Chat.vue calls in its own `onBeforeUnmount`. This is because `useNotifications` wraps handler references (`_wsFriendRequest`, `_wsFriendRequestResult`) to ensure the latest reactive closures are always called, and Chat.vue needs to coordinate cleanup timing with its own lifecycle.
+
 ### API Layer
 
-`api/request.js` — Axios instance with `baseURL` from env, 10s timeout. Request interceptor attaches `Bearer <token>`. Response interceptor: codes 200/201/202/204/206 pass through; 401 triggers `clearAuth()` + redirect to `/login`; other codes reject with error message. All API modules import this instance and export plain functions returning promises.
+`api/request.js` — Axios instance with `baseURL` from env, 10s timeout. Request interceptor attaches `Bearer <token>`. Response interceptor: codes 200/201/202/204/206 pass through; 401 triggers `handleUnauthorized()` (full cleanup + redirect); other codes reject with `new Error(res.message)`. HTTP error handler: extracts `error.response.data.message` as the error text and rejects with it — callers always get the backend's actual error message, never Axios generic `"Request failed with status code xxx"`. All API modules export plain functions returning promises.
+
+**Note**: `handleUnauthorized()` in the API layer performs full cleanup (clears localStorage, stops heartbeat, disconnects WebSocket, then redirects) — consistent with `useUserStore.clearUserState()`. This ensures 401-triggered redirects leave no stale state (timers running, WS reconnecting).
 
 ### Route Guards
 
-`router/index.js` — `beforeEach` checks `meta.requiresAuth` against localStorage token. Unauthenticated → `/login?redirect=...`. Already-authenticated hitting `/login` → redirect to `/chat`. Four routes: `/` (redirect), `/login`, `/chat`, `/profile` (stub), `/search` (stub).
+`router/index.js` — `beforeEach` checks `meta.requiresAuth` against localStorage token. Unauthenticated → `/login?redirect=...`. Already-authenticated hitting `/login` → redirect to `/chat`. Three routes: `/` (redirect), `/login`, `/chat`.
 
 ### Global Dependency Injection
 
@@ -98,6 +116,9 @@ All shared design tokens in `assets/shared.css`:
 | `FRIEND_ONLINE` / `FRIEND_OFFLINE` | receive | `useFriendList` |
 | `FRIEND_REQUEST` | receive | `useNotifications` |
 | `FRIEND_REQUEST_RESULT` | receive | `useNotifications` |
+| `GROUP_MESSAGE` | send/receive | `useChatMessages` + `useFriendList` |
+| `GROUP_MEMBER_JOIN` | receive | `useFriendList` |
+| `GROUP_MEMBER_LEAVE` | receive | `useFriendList` |
 | `ERROR` | receive | `wsManager` (default console.error) |
 
 Types are defined as JSDoc `@typedef` in `types/index.js`.
@@ -110,6 +131,8 @@ Chat page uses strict parent-child props-down/events-up:
 - **ChatNotificationPanel** — merged bubble stream of sent+received friend requests; emits `handle-request`, `load-more`, `back-to-list`
 - **ChatSidePanel** — add friend / create group / join group modes; emits `close`, `search`, `add-friend`, `create-group`, `join-group`
 - **GlobalLoading** — full-screen overlay with spinner; counter-based show/hide
+
+**Important — unscoped styles**: Chat.vue uses both `<style scoped>` (for page layout) and `<style>` (unscoped, for `.add-friend-dialog` classes). This is necessary because `ElMessageBox` renders its DOM outside the component tree (directly in `<body>`), so scoped styles (which add `data-v-xxx` attributes) won't match. Any styles targeting `ElMessageBox`, `ElMessage`, or `ElNotification` must be unscoped.
 
 ## Login Page Special Mechanics
 
@@ -130,4 +153,31 @@ Production deployment uses Nginx as reverse proxy (config in `nginx.conf`). Stat
 
 ## Stub Pages
 
-`Profile.vue` and `Search.vue` are minimal stubs with TODO comments. The search/panel-search functionality is actually implemented inside `ChatSidePanel` and `useNotifications` composable rather than in the Search route page.
+已移除。Profile/Search 功能已完全由 `ChatSidePanel`（profile 模式）和 `useNotifications`（搜索 + 好友申请）实现，无需独立路由页面。
+
+---
+
+## 2025-06-17 文档增强记录
+
+基于对全部源代码的通读，补充了以下**代码中才能发现的隐性架构模式**（未写入将导致后续开发者花费大量时间重新理解）：
+
+| 模式 | 说明 |
+|------|------|
+| Composable 依赖注入两种风格 | 独立参数（useChatMessages/useFriendList）vs options对象+回调（useNotifications），后者用回调解决循环依赖 |
+| PRIVATE_MESSAGE 双 handler | useChatMessages（消息展示）和 useFriendList（未读计数）同时注册，各司其职，修改任一方必须防止冲突（如未读计数重复累加） |
+| useNotifications 清理例外 | 唯一不用 `onBeforeUnmount` 的 composable，导出手动 `_cleanupNotifications()` 由 Chat.vue 调用，因为闭包包装引用需要协调清理时机 |
+| 401 双路径区别 | API层 `handleUnauthorized()` 仅清 localStorage + 跳转，**不停心跳/不断WS**；Store 的 `clearUserState()` 才是完整清理。排查状态泄漏时需注意 | ✅ 已修复（2025-06-17）：`handleUnauthorized()` 现与 `clearUserState()` 一致，执行完整清理 |
+| 非 scoped 样式 | `ElMessageBox` 渲染在 `<body>` 下，scoped 的 `data-v-xxx` 无法命中，必须在非 scoped `<style>` 块中编写浮层组件样式 |
+
+## 2025-06-17 后端文档同步修复记录
+
+基于后端文档 v1.7，修复了以下 4 个前-后端不一致问题：
+
+| 问题 | 状态 | 说明 |
+|------|------|------|
+| handleUnauthorized 不完整 | ✅ 已修复 | 原先仅清 localStorage + 跳转，未停心跳/断 WS；现与 `clearUserState()` 一致，执行完整清理 |
+| WS 消息类型缺失 | ✅ 已更新 | CLAUDE.md 补充了 `GROUP_MESSAGE`/`GROUP_MEMBER_JOIN`/`GROUP_MEMBER_LEAVE`（后端已实现，前端待对接） |
+| 搜索参数约束 | ✅ 已修复 | 搜索输入框添加 `maxlength="20"`，composable 添加 `slice(0,20)` 截断保护 |
+| 删除好友功能 | ✅ 已实现 | API 路径修复（`/friends/remove/{id}`），好友资料卡添加删除按钮（需确认），删除后自动刷新列表+清空聊天区 |
+| 架构优化 | ✅ 已完成 | ChatSidePanel 932→422行（提取 ChatProfileCard）；useNotifications 445→233行（提取 useSidePanel）；Chat.vue 597→472行（提取 useProfile）；移除 Profile/Search 占位页面和路由 |
+| 群聊系统 | ✅ 已实现 | 7 REST + 3 WS 全部对接：列表加载+创建+消息收发+群资料+解散退出+实时通知。仅加入群聊待后端接口 |

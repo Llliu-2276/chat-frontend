@@ -7,6 +7,7 @@
  */
 import { ref, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import { getChatHistory, sendMessage as sendMessageApi } from '@/api/friend';
+import { getGroupHistory, sendGroupMessage } from '@/api/group';
 import { wsManager } from '@/utils/websocket';
 
 /**
@@ -84,7 +85,10 @@ export function useChatMessages(chatTarget, chatType, friends, messageAreaRef, u
     if (append) loadingMore.value = true;
     else loadingMessages.value = true;
     try {
-      const res = await getChatHistory(chatTarget.value.userId, { page: currentPage.value, size: 20 });
+      const isGroup = chatType.value === 'group';
+      const res = isGroup
+        ? await getGroupHistory(chatTarget.value.groupId, { page: currentPage.value, size: 20 })
+        : await getChatHistory(chatTarget.value.userId, { page: currentPage.value, size: 20 });
       if (res.code === 200 && res.data) {
         const newMsgs = res.data.content || [];
         hasMoreMessages.value = currentPage.value < res.data.totalPages;
@@ -113,32 +117,50 @@ export function useChatMessages(chatTarget, chatType, friends, messageAreaRef, u
     if (!chatTarget.value || !content.trim()) return;
     isSending.value = true;
     const trimmed = content.trim();
+    const isGroup = chatType.value === 'group';
 
     const tempMsg = {
       _id: Date.now(),
       senderId: userStore.userId,
       senderName: userStore.userName,
-      receiverId: chatTarget.value.userId,
-      receiverName: chatTarget.value.userName || chatTarget.value.groupName,
       content: trimmed,
       sendTime: formatLocalDateTime(new Date()),
       readStatus: false,
+      ...(isGroup
+        ? { groupId: chatTarget.value.groupId }
+        : { receiverId: chatTarget.value.userId, receiverName: chatTarget.value.userName }
+      ),
     };
 
     messages.value.push(tempMsg);
-    updateFriendLastMessage(chatTarget.value.userId, trimmed, tempMsg.sendTime);
+    if (!isGroup) {
+      updateFriendLastMessage(chatTarget.value.userId, trimmed, tempMsg.sendTime);
+    }
     await nextTick();
     messageAreaRef.value?.scrollToBottom();
 
     try {
-      const sent = wsManager.send({
-        type: 'PRIVATE_MESSAGE',
-        receiverId: chatTarget.value.userId,
-        content: trimmed,
-      });
+      let sent;
+      if (isGroup) {
+        sent = wsManager.send({
+          type: 'GROUP_MESSAGE',
+          groupId: chatTarget.value.groupId,
+          content: trimmed,
+        });
+      } else {
+        sent = wsManager.send({
+          type: 'PRIVATE_MESSAGE',
+          receiverId: chatTarget.value.userId,
+          content: trimmed,
+        });
+      }
 
       if (!sent) {
-        await sendMessageApi({ receiverId: chatTarget.value.userId, content: trimmed });
+        if (isGroup) {
+          await sendGroupMessage({ groupId: chatTarget.value.groupId, content: trimmed });
+        } else {
+          await sendMessageApi({ receiverId: chatTarget.value.userId, content: trimmed });
+        }
       }
 
       // 发送成功：清空输入框
@@ -219,15 +241,56 @@ export function useChatMessages(chatTarget, chatType, friends, messageAreaRef, u
     if (message) message.readStatus = true;
   }
 
+  /**
+   * 处理 WebSocket 群聊消息
+   * - 自己发送的回传 → 替换临时消息
+   * - 他人发来的消息 → 追加到列表
+   */
+  function handleWsGroupMessage(msg) {
+    const { senderId, senderName, groupId, content, sendTime, recordId } = msg;
+
+    // 自己发送的回传 → 替换临时消息
+    if (senderId === userStore.userId) {
+      const idx = messages.value.findIndex(m => m._id && m.senderId === senderId && !m.recordId);
+      if (idx !== -1) {
+        messages.value[idx] = {
+          ...messages.value[idx],
+          recordId,
+          groupId,
+          sendTime: sendTime || messages.value[idx].sendTime,
+        };
+        return;
+      }
+    }
+
+    const isCurrentChat = chatTarget.value?.groupId === groupId && chatType.value === 'group';
+    const newMsg = {
+      recordId,
+      senderId,
+      senderName,
+      groupId,
+      content,
+      sendTime: sendTime || formatLocalDateTime(new Date()),
+    };
+
+    messages.value.push(newMsg);
+
+    if (isCurrentChat) {
+      nextTick(() => messageAreaRef.value?.scrollToBottom());
+    }
+  }
+
   // ==================== WebSocket 生命周期 ====================
   onMounted(() => {
     wsManager.on('PRIVATE_MESSAGE', handleWsPrivateMessage);
     wsManager.on('READ_RECEIPT', handleWsReadReceipt);
+    wsManager.on('GROUP_MESSAGE', handleWsGroupMessage);
   });
 
   onBeforeUnmount(() => {
     wsManager.off('PRIVATE_MESSAGE', handleWsPrivateMessage);
     wsManager.off('READ_RECEIPT', handleWsReadReceipt);
+    wsManager.off('GROUP_MESSAGE', handleWsGroupMessage);
   });
 
   return {

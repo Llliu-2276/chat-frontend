@@ -59,8 +59,27 @@
 | 处理好友申请 | POST | `/api/friends/request/handle` | ✅ |
 | 查询收到的申请 | GET | `/api/friends/request/received?status=0&page=1&size=20` | ✅ |
 | 查询发出的申请 | GET | `/api/friends/request/sent?page=1&size=20` | ✅ |
+| 删除好友 | DELETE | `/api/friends/remove/{friendId}` | ✅ |
 
 > **注意**：好友添加必须通过申请-同意流程，不存在直接添加好友的接口。发出的好友申请不支持撤回。
+
+### 群组接口
+
+| 接口 | 方法 | 路径 | 认证 |
+|-----|------|------|------|
+| 创建群聊 | POST | `/api/group/create` | ✅ |
+| 群聊列表 | GET | `/api/group/list` | ✅ |
+| 群聊详情 | GET | `/api/group/info/{groupId}` | ✅ |
+| 解散/退出群聊 | DELETE | `/api/group/{groupId}` | ✅ |
+| 发送群消息 | POST | `/api/group/message` | ✅ |
+| 群聊天记录 | GET | `/api/group/history/{groupId}?page=1&size=20` | ✅ |
+| 群成员列表 | GET | `/api/group/members/{groupId}` | ✅ |
+| 搜索群聊 | GET | `/api/group/search?keyword=&page=&size=` | ✅ |
+| 加入群聊 | POST | `/api/group/join/{groupId}` | ✅ |
+| 标记群消息已读 | POST | `/api/group/{groupId}/read/{recordId}` | ✅ |
+| 群未读消息数 | GET | `/api/group/{groupId}/unread-count` | ✅ |
+
+> **注意**：群主解散群聊会清除所有成员和聊天记录且不可恢复；非群主只能退出群聊。搜索群聊支持按群名和群号模糊匹配。
 
 ---
 
@@ -75,12 +94,16 @@
 | type | 方向 | 说明 |
 |------|------|------|
 | `PRIVATE_MESSAGE` | C→S / S→C | 私聊消息 |
+| `GROUP_MESSAGE` | C→S / S→C | 群聊消息 |
+| `GROUP_MEMBER_JOIN` | S→C | 群成员加入通知 |
+| `GROUP_MEMBER_LEAVE` | S→C | 群成员退出/群解散通知 |
 | `FRIEND_ONLINE` | S→C | 好友上线通知 |
 | `FRIEND_OFFLINE` | S→C | 好友下线通知 |
 | `FRIEND_REQUEST` | S→C | 好友申请通知（字段：senderId, senderName, requestId, requestMessage, sendTime） |
 | `FRIEND_REQUEST_RESULT` | S→C | 好友申请结果通知（字段：senderId, senderName, requestId, content=accepted/rejected, sendTime） |
 | `READ_RECEIPT` | S→C | 消息已读回执 |
 | `HEARTBEAT` | S→C | 心跳响应 |
+| `GROUP_READ_RECEIPT` | C→S | 群聊消息已读回执（字段：senderId, groupId, recordId） |
 | `ERROR` | S→C | 错误通知 |
 
 > 详细对接说明见 [WEBSOCKET_UPGRADE.md](./WEBSOCKET_UPGRADE.md)
@@ -292,6 +315,88 @@ if (data.code === 200) {
 }
 ```
 
+### 12. 删除好友
+
+```javascript
+const friendId = 2;
+
+// 弹出确认对话框
+if (!confirm('确定要删除该好友吗？聊天记录将被清除。')) return;
+
+const response = await fetch(`http://localhost:8080/api/friends/remove/${friendId}`, {
+  method: 'DELETE',
+  headers: { 'Authorization': `Bearer ${token}` }
+});
+
+const data = await response.json();
+if (data.code === 200) {
+  console.log('好友已删除');
+  // 刷新好友列表
+  refreshFriendList();
+} else {
+  console.log('删除失败：' + data.message);
+}
+```
+
+### 13. 创建群聊
+
+```javascript
+const response = await fetch('http://localhost:8080/api/group/create', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`
+  },
+  body: JSON.stringify({ groupName: '我的群聊' })
+});
+
+const data = await response.json();
+if (data.code === 201) {
+  console.log('群聊创建成功，群号：' + data.data.account);
+  // 跳转到群聊页面
+}
+```
+
+### 14. 获取群聊列表
+
+```javascript
+const response = await fetch('http://localhost:8080/api/group/list', {
+  headers: { 'Authorization': `Bearer ${token}` }
+});
+
+const data = await response.json();
+if (data.code === 200) {
+  data.data.forEach(group => {
+    console.log(`${group.groupName} - ${group.memberCount}人 - ${group.isOwner ? '群主' : '成员'}`);
+  });
+}
+```
+
+### 15. 解散/退出群聊
+
+```javascript
+const groupId = 1;
+const isOwner = true; // 从群列表的isOwner字段获取
+
+const actionText = isOwner ? '解散群聊' : '退出群聊';
+const warnText = isOwner
+  ? '确定要解散该群聊吗？所有成员和聊天记录将被清除。'
+  : '确定要退出该群聊吗？';
+
+if (!confirm(warnText)) return;
+
+const response = await fetch(`http://localhost:8080/api/group/${groupId}`, {
+  method: 'DELETE',
+  headers: { 'Authorization': `Bearer ${token}` }
+});
+
+const data = await response.json();
+if (data.code === 200) {
+  console.log(isOwner ? '群聊已解散' : '已退出群聊');
+  refreshGroupList();
+}
+```
+
 ---
 
 ## 📦 统一响应格式
@@ -384,7 +489,9 @@ async function apiCall(url, options) {
 6. ✅ **密码修改**：修改密码后所有旧Token自动失效，需重新登录
 7. ✅ **好友系统**：支持好友列表、未读消息、聊天记录查询、好友申请流程、发送消息
 8. ✅ **好友申请**：支持发起申请、同意/拒绝、查询收到/发出的申请
-9. ✅ **WebSocket**：实时消息推送、好友上线/下线通知、消息已读回执、好友申请通知
+9. ✅ **删除好友**：支持删除好友并清理聊天记录，操作不可逆
+10. ✅ **群组系统**：支持创建群聊、群列表、群详情、解散/退出
+11. ✅ **WebSocket**：实时消息推送、好友上线/下线通知、消息已读回执、好友申请通知
 
 ---
 
@@ -414,8 +521,24 @@ ws.onmessage = (event) => {
     case 'FRIEND_REQUEST_RESULT':
       console.log(`${msg.senderName} ${msg.content === 'accepted' ? '同意了' : '拒绝了'}你的好友申请`);
       break;
+    case 'GROUP_MESSAGE':
+      console.log(`群聊 ${msg.groupId} - ${msg.senderName}: ${msg.content}`);
+      break;
+    case 'GROUP_MEMBER_JOIN':
+      console.log(`${msg.senderName} 加入了群聊 ${msg.groupId}`);
+      break;
+    case 'GROUP_MEMBER_LEAVE':
+      console.log(`${msg.senderName} 离开了群聊 ${msg.groupId}`);
+      break;
   }
 };
+
+// 4. 发送群聊消息
+ws.send(JSON.stringify({
+  type: 'GROUP_MESSAGE',
+  groupId: 1,
+  content: '大家好'
+}));
 
 // 3. 发送消息
 ws.send(JSON.stringify({
@@ -442,4 +565,4 @@ ws.send(JSON.stringify({
 
 ---
 
-**快速参考手册 v1.4** | 更新于 2026-06-15
+**快速参考手册 v1.9** | 更新于 2026-06-17

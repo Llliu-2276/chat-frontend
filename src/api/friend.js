@@ -63,7 +63,7 @@ export function sendMessage(data) {
  */
 export function deleteFriend(friendId) {
   return request({
-    url: `/friends/${friendId}`,
+    url: `/friends/remove/${friendId}`,
     method: 'DELETE',
   });
 }

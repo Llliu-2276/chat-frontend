@@ -1,6 +1,6 @@
 # WebSocket 实时通信升级说明
 
-> **升级日期**: 2026-06-10
+> **升级日期**: 2026-06-18
 > **关联技术**: Spring Boot 4.0.2 + 原生 WebSocket + JWT
 
 ---
@@ -20,6 +20,9 @@
 | WebSocket 心跳 | 连接层心跳，替代原有的 HTTP 心跳接口 |
 | 好友申请通知 | 发起申请时实时推送 `FRIEND_REQUEST` 给被申请人 |
 | 申请结果通知 | 处理申请后实时推送 `FRIEND_REQUEST_RESULT` 给申请人 |
+| 消息撤回通知 | 用户撤回消息后推送 `MESSAGE_RECALL` 给接收者（私聊）或全体成员（群聊） |
+| 群主转让通知 | 群主转让后广播 `GROUP_OWNER_TRANSFERRED` 给全体成员 |
+| 入群申请通知 | 用户申请加入群聊时推送 `JOIN_GROUP_REQUEST` 给群主 |
 
 ### 与现有 REST 接口的关系
 
@@ -75,6 +78,9 @@ Token 从登录接口获取，放在 URL 查询参数中。
 { "type": "GROUP_MEMBER_JOIN", "groupId": 1, "senderId": 3, "senderName": "王五", "sendTime": "2026-06-10T12:00:00" }
 { "type": "GROUP_MEMBER_LEAVE", "groupId": 1, "senderId": 3, "senderName": "王五", "sendTime": "2026-06-10T12:30:00" }
 { "type": "READ_RECEIPT", "senderId": 2, "recordId": 105 }
+{ "type": "MESSAGE_RECALL", "senderId": 1, "senderName": "张三", "recordId": 105, "receiverId": 2, "groupId": null, "content": "消息已被撤回", "sendTime": "2026-06-18T12:00:00" }
+{ "type": "GROUP_OWNER_TRANSFERRED", "groupId": 1, "senderId": 5, "senderName": "旧群主", "targetUserId": 3, "content": "李四 成为新群主", "sendTime": "2026-06-18T12:00:00" }
+{ "type": "JOIN_GROUP_REQUEST", "senderId": 3, "senderName": "王五", "groupId": 1, "content": "申请加入群聊 xxx", "requestId": 1, "sendTime": "2026-06-18T12:00:00" }
 { "type": "ERROR", "error": "错误信息" }
 ```
 
@@ -88,6 +94,9 @@ Token 从登录接口获取，放在 URL 查询参数中。
 - 收到 `READ_RECEIPT` 时，将对应私聊消息标记为已读
 - 收到 `GROUP_MESSAGE` 时，将消息追加到对应群聊天列表
 - 收到 `GROUP_MEMBER_JOIN` / `GROUP_MEMBER_LEAVE` 时，更新群成员列表
+- 收到 `MESSAGE_RECALL` 时，将对应消息替换为"消息已被撤回"文本（私聊通过 receiverId+recordId 定位，群聊通过 groupId+recordId 定位）
+- 收到 `GROUP_OWNER_TRANSFERRED` 时，更新群主信息（senderId=旧群主，targetUserId=新群主）
+- 收到 `JOIN_GROUP_REQUEST` 时（群主端），弹出入群申请提示，刷新申请列表
 - 进入群聊页面时，发送 `GROUP_READ_RECEIPT` 上报已读位置（也可调用 REST `POST /api/group/{groupId}/read/{recordId}`）
 - 连接断开后，未送达的消息不会丢失，前端可通过原有 REST 接口补拉
 - 页面关闭前主动断开连接

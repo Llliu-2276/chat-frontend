@@ -1,7 +1,7 @@
 # 📘 ChatBackend 前后端对接文档
 
-> **文档版本**: v1.6  
-> **更新日期**: 2026-06-15  
+> **文档版本**: v2.2  
+> **更新日期**: 2026-06-18  
 > **适用对象**: 前端开发工程师  
 > **后端技术栈**: Spring Boot 4.0.2 + JWT + Redis + MySQL
 
@@ -584,39 +584,44 @@ window.addEventListener('beforeunload', () => {
 #### 3.5.1 获取好友列表
 
 ```
-GET /api/friends/list
+GET /api/friends/list?page=1&size=20
 ```
 
-**请求参数**：无
+**请求参数**：
+
+| 参数 | 类型 | 必需 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| page | int | ❌ | 1 | 页码 |
+| size | int | ❌ | 20 | 每页大小（1-100） |
 
 **请求头**：
 ```
 Authorization: Bearer {token}
 ```
 
-**响应数据**：
+**响应数据**（分页）：
 ```json
 {
   "code": 200,
   "message": "获取好友列表成功",
-  "data": [
-    {
-      "userId": 2,
-      "userAccount": "87654321",
-      "userName": "张三",
-      "isOnline": true,
-      "isAvailable": true,
-      "createDate": "2024-01-15"
-    },
-    {
-      "userId": 3,
-      "userAccount": "11223344",
-      "userName": "李四",
-      "isOnline": false,
-      "isAvailable": true,
-      "createDate": "2024-02-20"
-    }
-  ]
+  "data": {
+    "content": [
+      {
+        "userId": 2,
+        "userAccount": "87654321",
+        "userName": "张三",
+        "isOnline": true,
+        "isAvailable": true,
+        "createDate": "2024-01-15",
+        "lastMessage": "好的明天见",
+        "lastMessageTime": "2026-06-18T10:30:00",
+        "unreadCount": 3
+      }
+    ],
+    "totalElements": 50,
+    "totalPages": 3,
+    "numberOfElements": 20
+  }
 }
 ```
 
@@ -625,7 +630,7 @@ Authorization: Bearer {token}
 **用途**：好友列表页面、联系人展示
 
 **前端处理**：
-- 展示好友卡片列表
+- 展示好友卡片列表，含最后消息预览和未读计数
 - 显示在线状态（绿色/灰色圆点）
 - 支持点击好友查看聊天记录
 
@@ -1391,7 +1396,51 @@ async function removeFriend(friendId) {
 }
 ```
 
----
+#### 3.5.11 撤回私聊消息
+
+```
+POST /api/friends/message/{recordId}/recall
+```
+
+**请求参数**（路径）:
+
+| 参数 | 类型 | 必需 | 说明 |
+|------|------|------|------|
+| recordId | Long | ✅ | 消息记录ID |
+
+**响应数据**：
+```json
+{
+  "code": 200,
+  "message": "消息已撤回",
+  "data": null
+}
+```
+
+**认证要求**: ✅  
+**用途**: 撤回自己发送的私聊消息（2分钟内）
+
+**注意事项**：
+- 仅消息发送者可撤回，超过2分钟无法撤回
+- 已撤回的消息不再出现在历史记录中
+
+#### 3.5.12 搜索私聊消息
+
+```
+GET /api/friends/chat-history/{friendId}/search?keyword=你好&page=1&size=20
+```
+
+**请求参数**:
+
+| 参数 | 类型 | 必需 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| friendId | Long | ✅ | - | 好友用户ID（路径） |
+| keyword | String | ✅ | - | 搜索关键词 |
+| page | int | ❌ | 1 | 页码 |
+| size | int | ❌ | 20 | 每页大小 |
+
+**响应数据**：分页返回含关键词的聊天记录
+**认证要求**: ✅
 
 ---
 
@@ -1963,9 +2012,153 @@ Authorization: Bearer {token}
 |------|---------|------|
 | 403 | 您不是该群聊的成员 | 非群成员无权查询 |
 
+### 3.6.12 踢出群成员
+
+```
+DELETE /api/group/{groupId}/member/{targetUserId}
+```
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| groupId | Long | ✅ | 群组ID（路径） |
+| targetUserId | Long | ✅ | 被踢出用户ID（路径） |
+
+**响应**：`{"code":200, "message":"已将该成员移出群聊"}`
+**认证**：✅（仅群主）
+
+### 3.6.13 转让群主
+
+```
+POST /api/group/{groupId}/transfer/{targetUserId}
+```
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| groupId | Long | ✅ | 群组ID（路径） |
+| targetUserId | Long | ✅ | 新群主用户ID（路径） |
+
+**响应**：`{"code":200, "message":"群主转让成功"}`
+**认证**：✅（仅群主）
+
+### 3.6.14 邀请好友入群
+
+```
+POST /api/group/{groupId}/invite/{inviteeId}
+```
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| groupId | Long | ✅ | 群组ID（路径） |
+| inviteeId | Long | ✅ | 被邀请人用户ID（路径） |
+
+**响应**：`{"code":201, "message":"邀请好友入群成功", "data":{群聊信息VO}}`
+**认证**：✅（邀请人须是群成员且被邀请人须是好友）
+
+### 3.6.15 申请加入群聊（需审批）
+
+```
+POST /api/group/join/{groupId}
+```
+
+> ⚠️ **v2.1 变更**：加入群聊改为审批制，不再直接入群。好友邀请入群（3.6.14）不受影响，仍直接加入。
+
+**响应**：`{"code":201, "message":"入群申请已发送，等待群主审批"}`
+**流程**：用户申请 → 群主收到 WebSocket `JOIN_GROUP_REQUEST` 推送 → 群主审批
+
+### 3.6.16 查看入群申请（群主）
+
+```
+GET /api/group/{groupId}/join-requests?page=1&size=20
+```
+
+**响应**：分页返回待处理申请，每项含 applicantId/Name、createTime  
+**认证**：✅（仅群主）
+
+### 3.6.17 处理入群申请
+
+```
+POST /api/group/{groupId}/join-request/{requestId}/handle
+Body: { "requestId": 1, "accept": true }
+```
+
+**响应**：`{"code":200, "message":"已同意入群申请"}` 或 `"...已拒绝入群申请"`  
+**认证**：✅（仅群主）
+
+### 3.6.18 撤回群聊消息
+
+```
+POST /api/group/{groupId}/message/{recordId}/recall
+```
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| groupId | Long | ✅ | 群组ID（路径） |
+| recordId | Long | ✅ | 消息记录ID（路径） |
+
+**响应**：`{"code":200, "message":"消息已撤回"}`
+**限制**：仅发送者可撤回，2分钟内
+
+### 3.6.19 搜索群聊消息
+
+```
+GET /api/group/history/{groupId}/search?keyword=你好&page=1&size=20
+```
+
+**参数**：keyword（必需，≤50字符）、page、size  
+**响应**：分页返回含关键词的群聊消息
+
+### 3.6.20 群聊通知列表
+
+```
+GET /api/group/{groupId}/notifications?page=1&size=20
+```
+
+**响应**：分页返回群通知（成员加入/退出、群主转让等）  
+**认证**：✅（须是群成员）
+
+---
+
+### 3.7 用户拉黑模块接口
+
+#### 3.7.1 拉黑用户
+
+```
+POST /api/user/block
+Body: { "blockedId": 123 }
+```
+
+**响应**：`{"code":200, "message":"已拉黑该用户"}`
+**效果**：被拉黑者无法向拉黑者发消息/好友申请
+
+#### 3.7.2 取消拉黑
+
+```
+DELETE /api/user/block/{blockedId}
+```
+
+**响应**：`{"code":200, "message":"已取消拉黑"}`
+
+#### 3.7.3 黑名单列表
+
+```
+GET /api/user/blocked-list
+```
+
+**响应**：`{"code":200, "data":[{"userId":123, "userName":"张三", "userAccount":"00010001", "createTime":"..."}]}`
+
+---
+
+### 3.8 接口限流
+
+所有 `/api/**` 路径均启用限流（排除 `/api/auth/**`、`/ws/**`）。  
+默认 60次/60秒/用户/路径，超限返回 `{"code":429, "message":"请求太频繁"}`．  
+配置项：`rate-limit.max-requests=60`、`rate-limit.window-seconds=60`。
+
 ---
 
 ## 4. 计划中的API接口
+
+> **v2.1 更新**：以下大部分功能已实现，剩余为第三优先级/低优先级计划。
 
 以下接口计划在未来实现：
 
@@ -2974,6 +3167,9 @@ async function safeApiCall(url, options) {
 | v1.7 | 2026-06-15 | 实现 WebSocket 群聊实时通信：GROUP_MESSAGE 广播 + 成员变动通知 | 后端团队 |
 | v1.8 | 2026-06-17 | 新增群聊搜索（按群名/群号）、加入群聊接口；实现群聊消息已读功能（last_read_record_id方案 + GROUP_READ_RECEIPT）；群聊表新增member_count字段 | 后端团队 |
 | v1.9 | 2026-06-17 | REST发送消息补充WebSocket实时推送；修复未读消息误清零（getUnreadMessages不再修改已读状态）；好友列表返回最后消息预览+未读数；群列表返回最后消息预览+未读数 | 后端团队 |
+| v2.0 | 2026-06-18 | 第二优先级功能：踢人出群、撤回消息(软删除2分钟)、群主转让、邀请好友入群、接口限流(429)、用户拉黑(blocked_user)、消息搜索；群聊消息补充WebSocket推送；新增chat_group_notification/blocked_user表 | 后端团队 |
+| v2.1 | 2026-06-18 | 加入群聊改为审批制（搜索入群需群主同意）；新增入群申请/审批接口、群通知列表接口；新增group_join_request表 | 后端团队 |
+| v2.2 | 2026-06-18 | 代码优化：登录失败返回401(原404)；ObjectMapper统一注入为Spring Bean；好友列表加分页(支持page/size)；移除handleFriendRequest冗余updateRequestStatus | 后端团队 |
 
 ---
 

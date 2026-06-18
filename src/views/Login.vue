@@ -14,7 +14,7 @@
     <div class="ring-left-curve-down" :style="leftCurveStyle"></div>
 
     <!-- 前景层：登录注册卡片 -->
-    <div class="login-register-container" ref="containerRef">
+    <div class="login-register-container glass-card" ref="containerRef">
       <!-- 注册表单区域 -->
       <div class="form-div register-section">
         <h2 class="title">Register</h2>
@@ -151,18 +151,20 @@
  * 登录/注册页面
  * 包含登录和注册表单，支持可拖动遮罩切换
  */
-import { ref, computed, onMounted, onBeforeUnmount, inject } from 'vue';
+import { ref, inject } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
+import { useDragMask } from '@/composables/useDragMask';
 
-// 路由和用户状态
 const router = useRouter();
 const userStore = useUserStore();
 const containerRef = ref(null);
 
-// 注入全局 toast 和 loading
 const toast = inject('toast');
 const loading = inject('loading');
+
+// ==================== 遮罩拖拽 ====================
+const { maskPosition, dragDirection, maskStyle, leftCurveStyle, startDrag, slideTo } = useDragMask(containerRef);
 
 // ==================== 登录表单 ====================
 // 登录表单数据
@@ -284,38 +286,8 @@ async function handleRegister() {
       // 清空注册表单
       registerForm.value = { userName: '', password: '', confirmPassword: '' };
 
-      // 延迟500ms后移动遮罩，确保Toast已显示且用户能看到
-      setTimeout(() => {
-        /**
-         * 注册成功后，将遮罩从注册区移动到登录区
-         *
-         * 重要：maskPosition的含义
-         * - 0 = 遮罩在左侧（覆盖注册表单）→ 用户看到右侧的登录表单
-         * - 1 = 遮罩在右侧（覆盖登录表单）→ 用户看到左侧的注册表单
-         *
-         * 注册成功后，用户需要登录，所以应该显示登录表单
-         * 因此需要将遮罩移动到右侧（maskPosition = 1），覆盖登录表单
-         * 这样用户就能看到并使用左侧的注册表单... 不对！
-         *
-         * 重新理解布局：
-         * - HTML中：register-section在左（第13行），login-section在右（第59行）
-         * - maskPosition = 0 时，遮罩在左侧，覆盖register-section
-         * - maskPosition = 1 时，遮罩在右侧，覆盖login-section
-         *
-         * 注册成功后，应该显示login-section让用户登录
-         * 所以遮罩应该移动到右侧（maskPosition = 1），覆盖login-section
-         * 这样register-section可见但被清空，login-section被遮罩覆盖...
-         *
-         * 等等，这样逻辑不对！让我重新思考...
-         * 实际上遮罩是用来“遮挡”不需要显示的表单的！
-         * - maskPosition = 0：遮罩在左，遮挡注册表单，用户看到登录表单 ✅
-         * - maskPosition = 1：遮罩在右，遮挡登录表单，用户看到注册表单 ✅
-         *
-         * 所以注册成功后，应该 maskPosition = 0，显示登录表单！
-         */
-        maskPosition.value = 0; // 移动到注册区，遮挡注册表单，显示登录表单
-        dragDirection.value = 'left'; // 向左移动，从注册区移动到登录区
-      }, 500);
+      // 延迟500ms后滑动遮罩到登录区（maskPosition=0 遮挡注册表单，显示登录表单）
+      setTimeout(() => slideTo(0), 500);
     } else {
       toast.error(result.message || '注册失败，请重试');
     }
@@ -326,164 +298,6 @@ async function handleRegister() {
   }
 }
 
-// ==================== 遮罩拖动相关状态 ====================
-/**
- * maskPosition: 遮罩位置比例 (0 到 1 之间)
- * - 0 = 遮罩在左侧，覆盖注册表单，显示登录表单
- * - 1 = 遮罩在右侧，覆盖登录表单，显示注册表单
- * - 实际位移 = maskPosition * maskWidth
- */
-const maskPosition = ref(0); // 初始位置：0 (注册区)
-const isDragging = ref(false); // 是否正在拖动
-const startX = ref(0); // 拖动开始时的鼠梱X坐标
-const startPosition = ref(0); // 拖动开始时的maskPosition值
-const containerWidth = ref(0); // 容器总宽度
-const maskWidth = ref(0); // 遮罩层宽度（容器宽度的一半）
-
-/**
- * dragDirection: 拖动方向，用于控制文字动画
- * - 'left' = 向左拖动，遮罩从右向左移动
- * - 'right' = 向右拖动，遮罩从左向右移动
- * - null = 无拖动（初始状态或点击切换）
- */
-const dragDirection = ref(null);
-// ==================== 遮罩样式计算 ====================
-/**
- * maskStyle: 遮罩容器的动态样式
- * - transform: 根据maskPosition计算水平位移
- * - transition: 拖动时无过渡动画，非拖动时使用弹性动画
- */
-const maskStyle = computed(() => ({
-  // 水平位移 = 位置比例 × 遮罩宽度
-  transform: `translateX(${maskPosition.value * maskWidth.value}px)`,
-  // 拖动中禁用transition，实现实时跟随；松开后启用弹性动画
-  transition: isDragging.value ? 'none' : 'transform 0.5s cubic-bezier(0.68, -0.55, 0.27, 1.55)',
-}));
-// ==================== 拖动事件处理 ====================
-
-/**
- * startDrag: 开始拖动
- * @param {MouseEvent|TouchEvent} e - 鼠标或触摸事件对象
- */
-function startDrag(e) {
-  isDragging.value = true;
-  // 获取起始X坐标（兼容鼠标和触摸事件）
-  startX.value = e.type.includes('mouse') ? e.clientX : e.touches[0].clientX;
-  startPosition.value = maskPosition.value;
-  dragDirection.value = null; // 重置拖动方向，等待用户拖动
-
-  // 添加全局事件监听
-  document.addEventListener('mousemove', onDrag);
-  document.addEventListener('mouseup', endDrag);
-  document.addEventListener('touchmove', onDrag);
-  document.addEventListener('touchend', endDrag);
-}
-/**
- * onDrag: 拖动中处理
- * @param {MouseEvent|TouchEvent} e - 鼠标或触摸事件对象
- */
-function onDrag(e) {
-  if (!isDragging.value) return;
-
-  // 获取当前X坐标
-  const currentX = e.type.includes('mouse') ? e.clientX : e.touches[0].clientX;
-  const deltaX = currentX - startX.value;
-
-  // 记录拖动方向：deltaX > 0 表示向右拖动，< 0 表示向左拖动
-  dragDirection.value = deltaX > 0 ? 'right' : deltaX < 0 ? 'left' : dragDirection.value;
-
-  // 计算位置变化比例（归一化到0-1范围）
-  const deltaPosition = deltaX / maskWidth.value;
-
-  // 限制拖动范围在 0-1 之间，防止超出边界
-  maskPosition.value = Math.max(0, Math.min(1, startPosition.value + deltaPosition));
-}
-/**
- * endDrag: 结束拖动 - 吸附到最近的位置
- */
-function endDrag() {
-  isDragging.value = false;
-  // 计算吸附阈值（中点位置）
-  const threshold = (containerWidth.value / 2 - maskWidth.value / 2) / maskWidth.value;
-
-  if (maskPosition.value > threshold) {
-    // 超过中点，吸附到登录区域（右侧）
-    maskPosition.value = 1;
-    // 如果没有拖动方向（点击切换），默认为向右拖动
-    dragDirection.value = dragDirection.value || 'right';
-  } else {
-    // 未超过中点，吸附到注册区域（左侧）
-    maskPosition.value = 0;
-    // 如果没有拖动方向，默认为向左拖动
-    dragDirection.value = dragDirection.value || 'left';
-  }
-
-  // 移除事件监听器
-  document.removeEventListener('mousemove', onDrag);
-  document.removeEventListener('mouseup', endDrag);
-  document.removeEventListener('touchmove', onDrag);
-  document.removeEventListener('touchend', endDrag);
-}
-/**
- * leftCurveStyle: 左侧椭圆的同步样式（与遮罩联动）
- * 确保左侧椭圆跟随遮罩一起移动，保持视觉连贯性
- */
-const leftCurveStyle = computed(() => ({
-  // 与遮罩使用相同的位移计算
-  transform: `translateX(${maskPosition.value * maskWidth.value}px)`,
-  // 与遮罩使用相同的过渡动画
-  transition: isDragging.value ? 'none' : 'transform 0.5s cubic-bezier(0.68, -0.55, 0.27, 1.55)',
-}));
-
-// 获取上层椭圆的高
-const leftCurveStyleUpHeight = ref(0);
-
-// ==================== 生命周期钩子 ====================
-onMounted(() => {
-  // 获取容器和遮罩宽度
-  if (containerRef.value) {
-    containerWidth.value = containerRef.value.offsetWidth;
-    // 遮罩宽度是容器宽度的一半（因为 width: 50%）
-    maskWidth.value = containerWidth.value / 2;
-  }
-
-  const leftCurveStyleUp = document.querySelector('.ring-left-curve-up');
-  if (leftCurveStyleUp) {
-    // 读取 ref 数值 + 正确拼接单位
-    leftCurveStyleUpHeight.value = leftCurveStyleUp.offsetHeight;
-    // 把自定义属性挂载到组件根元素（或 :root），解决 scoped 作用域问题
-    document.querySelector('.login-page').style.setProperty('--left-height', `${leftCurveStyleUpHeight.value}px`);
-  }
-
-  // 监听窗口大小变化
-  window.addEventListener('resize', handleResize);
-});
-
-/**
- * handleResize: 处理窗口大小变化
- * 重新计算容器和遮罩宽度
- */
-function handleResize() {
-  if (containerRef.value) {
-    containerWidth.value = containerRef.value.offsetWidth;
-    maskWidth.value = containerWidth.value / 2;
-  }
-  // 重新计算左上椭圆高度并更新自定义属性
-  const leftCurveStyleUp = document.querySelector('.ring-left-curve-up');
-  if (leftCurveStyleUp) {
-    leftCurveStyleUpHeight.value = leftCurveStyleUp.offsetHeight;
-    document.querySelector('.login-page').style.setProperty('--left-height', `${leftCurveStyleUpHeight.value}px`);
-  }
-}
-
-// 组件销毁前，移除事件监听器
-onBeforeUnmount(() => {
-  document.removeEventListener('mousemove', onDrag);
-  document.removeEventListener('mouseup', endDrag);
-  document.removeEventListener('touchmove', onDrag);
-  document.removeEventListener('touchend', endDrag);
-  window.removeEventListener('resize', handleResize);
-});
 </script>
 
 <style scoped>
@@ -539,14 +353,6 @@ onBeforeUnmount(() => {
   width: 100%;
   max-width: 1450px;
   padding: 40px;
-  background: rgba(255, 255, 255, 0.25);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 16px;
-  box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.1),
-    0 2px 8px rgba(0, 0, 0, 0.05);
   text-align: center;
 }
 

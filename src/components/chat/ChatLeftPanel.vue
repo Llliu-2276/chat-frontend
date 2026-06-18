@@ -6,7 +6,7 @@
 <template>
   <div class="left-panel" :class="{ 'mobile-show': mobileShow }">
     <!-- 顶部用户栏 -->
-    <div class="user-bar">
+    <div class="user-bar glass-card">
       <div class="user-bar-profile" @click="$emit('open-profile')" title="查看个人资料">
         <div class="avatar" :class="isLoggedIn ? 'online' : 'offline'"
              :style="{ background: 'linear-gradient(135deg, #11998e, #38ef7d)' }">
@@ -21,7 +21,7 @@
     </div>
 
     <!-- 列表卡片 -->
-    <div class="list-card">
+    <div class="list-card glass-card">
       <!-- 好友分区 -->
       <div class="list-section" :class="{ collapsed: !friendsExpanded }">
         <div class="card-header" @click="$emit('toggle-friends')">
@@ -147,17 +147,17 @@
         <div class="section-body">
           <div class="section-body-inner">
             <div class="conversation-list">
-              <!-- 新朋友 -->
+              <!-- 好友通知 -->
               <div class="conversation-item"
                    :class="{ active: activeView === 'notifications' }"
                    @click="$emit('open-notifications')">
                 <div class="conv-avatar avatar avatar-sm notification-avatar"
                      :style="{ background: 'linear-gradient(135deg, #62d2a2, #38ef7d)' }">
-                  <el-icon :size="18"><Bell /></el-icon>
+                  <el-icon :size="18"><UserFilled /></el-icon>
                 </div>
                 <div class="conv-info">
                   <div class="conv-top-row">
-                    <span class="conv-name">新朋友</span>
+                    <span class="conv-name">好友通知</span>
                   </div>
                   <div class="conv-bottom-row">
                     <span class="conv-last-msg">好友申请通知</span>
@@ -165,7 +165,24 @@
                   </div>
                 </div>
               </div>
-              <!-- 占位：后续可扩展群聊邀请、系统通知等 -->
+              <!-- 群聊通知 -->
+              <div class="conversation-item"
+                   :class="{ active: activeView === 'notifications-group' }"
+                   @click="$emit('open-group-notifications')">
+                <div class="conv-avatar avatar avatar-sm notification-avatar"
+                     :style="{ background: 'linear-gradient(135deg, #11998e, #9df3c4)' }">
+                  <el-icon :size="18"><Bell /></el-icon>
+                </div>
+                <div class="conv-info">
+                  <div class="conv-top-row">
+                    <span class="conv-name">群聊通知</span>
+                  </div>
+                  <div class="conv-bottom-row">
+                    <span class="conv-last-msg">群成员变动通知</span>
+                    <span v-if="groupNotificationCount" class="unread-badge">{{ groupNotificationCount }}</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -175,8 +192,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUpdate, onBeforeUnmount, nextTick } from 'vue';
-import { SwitchButton, Plus, ArrowDown, Edit, Search, Bell } from '@element-plus/icons-vue';
+import { ref, computed } from 'vue';
+import { SwitchButton, Plus, ArrowDown, Edit, Search, Bell, UserFilled } from '@element-plus/icons-vue';
+import { formatTime } from '@/utils/time';
+import { useDropdown } from '@/composables/useDropdown';
 
 defineOptions({ name: 'ChatLeftPanel' });
 
@@ -193,6 +212,7 @@ const props = defineProps({
   groupsExpanded: { type: Boolean, default: true },
   notificationsExpanded: { type: Boolean, default: true },
   pendingRequestCount: { type: Number, default: 0 },
+  groupNotificationCount: { type: Number, default: 0 },
   activeView: { type: String, default: 'chat' },
   mobileShow: { type: Boolean, default: false },
   loadingFriends: { type: Boolean, default: false },
@@ -202,16 +222,15 @@ const emit = defineEmits([
   'select-friend', 'select-group',
   'toggle-friends', 'toggle-groups', 'toggle-notifications',
   'group-action',
-  'logout', 'open-side-panel', 'open-notifications', 'open-profile',
+  'logout', 'open-side-panel', 'open-notifications', 'open-group-notifications', 'open-profile',
 ]);
 
 // ==================== 内部状态 ====================
 const friendSearch = ref('');
-const showGroupMenu = ref(false);
-const groupMenuPos = ref({ top: '0px', right: '0px' });
 const groupPlusBtnRef = ref(null);
-let observer = null;
-let mounted = false;
+
+// 群聊下拉菜单
+const { show: showGroupMenu, position: groupMenuPos, toggle: toggleGroupMenu, close: closeGroupMenu } = useDropdown({ triggerRef: groupPlusBtnRef });
 
 // ==================== 计算属性 ====================
 const filteredFriends = computed(() => {
@@ -229,70 +248,12 @@ const filteredFriends = computed(() => {
   });
 });
 
-// ==================== 群聊菜单（内部管理） ====================
-function toggleGroupMenu() {
-  showGroupMenu.value = !showGroupMenu.value;
-  if (showGroupMenu.value) {
-    nextTick(() => updateMenuPos());
-  }
-}
-
-function updateMenuPos() {
-  if (!groupPlusBtnRef.value) return;
-  const rect = groupPlusBtnRef.value.getBoundingClientRect();
-  groupMenuPos.value = {
-    top: (rect.bottom + 6) + 'px',
-    right: (window.innerWidth - rect.right) + 'px',
-  };
-}
-
+// ==================== 群聊菜单 ====================
 function handleGroupAction(action) {
-  showGroupMenu.value = false;
+  closeGroupMenu();
   emit('group-action', action);
 }
 
-// 监听 DOM 变化实时更新菜单位置
-onBeforeUpdate(() => {
-  if (showGroupMenu.value && groupPlusBtnRef.value) {
-    if (!observer) {
-      observer = new MutationObserver(() => {
-        if (showGroupMenu.value && groupPlusBtnRef.value) {
-          updateMenuPos();
-        }
-      });
-      observer.observe(document.body, { childList: true, subtree: true, attributes: true });
-    }
-  } else {
-    if (observer) { observer.disconnect(); observer = null; }
-  }
-});
-
-onMounted(() => {
-  mounted = true;
-  document.addEventListener('click', handleClickOutside);
-});
-
-onBeforeUnmount(() => {
-  mounted = false;
-  if (observer) { observer.disconnect(); observer = null; }
-  document.removeEventListener('click', handleClickOutside);
-});
-
-/** 点击外部关闭群聊菜单 */
-function handleClickOutside(e) {
-  if (!showGroupMenu.value) return;
-  const dropdown = document.querySelector('.action-dropdown');
-  if (dropdown && !dropdown.contains(e.target)) {
-    showGroupMenu.value = false;
-  }
-}
-
-// ==================== 工具函数 ====================
-function formatTime(t) {
-  if (!t) return '';
-  const normalized = t.replace('T', ' ');
-  return normalized.length >= 16 ? normalized.slice(11, 16) : normalized;
-}
 </script>
 
 <style scoped>
@@ -315,12 +276,6 @@ function formatTime(t) {
   align-items: center;
   gap: 12px;
   padding: 14px 18px;
-  background: rgba(255, 255, 255, 0.25);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .user-bar-profile {
@@ -376,12 +331,6 @@ function formatTime(t) {
   display: flex;
   flex-direction: column;
   overflow: visible;
-  background: rgba(255, 255, 255, 0.25);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .list-section { min-height: 0; }
@@ -484,12 +433,6 @@ function formatTime(t) {
   overflow-y: auto;
   padding: 4px 0;
 }
-.conversation-list::-webkit-scrollbar { width: 4px; }
-.conversation-list::-webkit-scrollbar-thumb {
-  background: linear-gradient(135deg, #11998e, #38ef7d);
-  border-radius: 2px;
-}
-.conversation-list::-webkit-scrollbar-track { background: transparent; }
 
 .list-loading, .list-empty {
   display: flex;

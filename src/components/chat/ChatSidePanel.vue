@@ -5,7 +5,7 @@
  -->
 <template>
   <Transition name="slide-panel">
-    <div v-if="visible" class="side-panel">
+    <div v-if="visible" class="side-panel glass-card">
       <!-- 面板头部 -->
       <div class="panel-header">
         <button class="card-action-btn panel-close-btn" @click="$emit('close')" title="收起">
@@ -54,7 +54,10 @@
                     {{ sendingRequestIds.has(user.userId) ? '发送中...' : '添加' }}
                   </button>
                   <span v-else-if="hasPendingRequest(user)" class="panel-pending-tag">申请已发送</span>
-                  <span v-else class="panel-friend-tag">已是好友</span>
+                  <button v-else class="panel-msg-btn"
+                          @click.stop="$emit('send-message-to', user)">
+                    发消息
+                  </button>
                 </div>
               </div>
             </template>
@@ -75,18 +78,45 @@
               </div>
             </template>
 
-            <!-- 加入群聊模式 -->
-            <template v-else-if="mode === 'group'">
-              <div class="panel-section">
-                <div class="panel-search">
-                  <input type="text" class="form-input search-input" placeholder="输入群聊ID..."
-                         v-model="searchKeyword" />
-                  <el-icon class="search-icon"><Search /></el-icon>
+            <!-- 加入群聊模式（搜索群聊 → 结果列表） -->
+            <template v-else-if="mode === 'group' && groupSubMode === 'join'">
+              <div class="panel-search">
+                <input type="text" class="form-input search-input" placeholder="搜索群聊名称或账号..."
+                       v-model="searchKeyword" @input="onGroupSearch" maxlength="20" />
+                <el-icon class="search-icon"><Search /></el-icon>
+              </div>
+              <div class="panel-results">
+                <div v-if="groupSearching" class="list-loading">
+                  <span class="loading-icon"><img src="@/assets/loading.png" alt="Loading"></span>
                 </div>
-                <button class="submit-button panel-action-btn"
-                        :disabled="!searchKeyword.trim()">
-                  搜索并加入群聊
-                </button>
+                <div v-else-if="groupSearchResults.length === 0 && searchKeyword" class="list-empty">
+                  <p>未找到群聊</p>
+                </div>
+                <div v-else-if="groupSearchResults.length === 0 && !searchKeyword" class="list-empty">
+                  <p>输入关键词搜索群聊</p>
+                </div>
+                <div v-else v-for="group in groupSearchResults" :key="'gr-' + group.groupId"
+                     class="panel-result-item">
+                  <div class="panel-result-user" @click="$emit('view-profile', group)">
+                    <div class="conv-avatar avatar avatar-sm"
+                         :style="{ background: 'linear-gradient(135deg, #11998e, #38ef7d)' }">
+                      {{ group.groupName?.charAt(0) || '?' }}
+                    </div>
+                    <div class="conv-info">
+                      <span class="conv-name">{{ group.groupName }}</span>
+                      <span class="conv-account">{{ group.account }}</span>
+                    </div>
+                  </div>
+                  <button v-if="!checkIsGroupMember(group)" class="panel-add-btn"
+                          @click.stop="$emit('join-group', group)"
+                          :disabled="joiningGroupIds.has(group.groupId)">
+                    {{ joiningGroupIds.has(group.groupId) ? '加入中...' : '加入群聊' }}
+                  </button>
+                  <button v-else class="panel-msg-btn"
+                          @click.stop="$emit('send-message-to-group', group)">
+                    发消息
+                  </button>
+                </div>
               </div>
             </template>
 
@@ -96,12 +126,14 @@
                 :profile-user="profileUser"
                 :profile-context="profileContext"
                 :profile-loading="profileLoading"
+                :is-group-member="isGroupMember"
                 @edit-username="(name) => $emit('edit-username', name)"
                 @change-password="(data) => $emit('change-password', data)"
                 @send-message-to="(user) => $emit('send-message-to', user)"
                 @add-friend-from-profile="(user) => $emit('add-friend-from-profile', user)"
                 @delete-friend="(user) => $emit('delete-friend', user)"
                 @dissolve-or-leave-group="(user) => $emit('dissolve-or-leave-group', user)"
+                @join-group="(group) => $emit('join-group', group)"
                 @logout="$emit('logout')"
               />
             </template>
@@ -126,17 +158,25 @@ const props = defineProps({
   searchResults: { type: Array, default: () => [] },
   searching: { type: Boolean, default: false },
   friends: { type: Array, default: () => [] },
+  groups: { type: Array, default: () => [] },         // 群聊列表（用于判断是否已加入）
   sentRequests: { type: Array, default: () => [] },
   sendingRequestIds: { type: Set, default: () => new Set() },
+  // 群聊搜索
+  groupSearchResults: { type: Array, default: () => [] },
+  groupSearching: { type: Boolean, default: false },
+  joiningGroupIds: { type: Set, default: () => new Set() },
   // Profile mode props
   profileUser: { type: Object, default: null },       // 当前查看的用户
-  profileContext: { type: String, default: 'self' },  // 'self' | 'friend' | 'stranger'
+  profileContext: { type: String, default: 'self' },  // 'self' | 'friend' | 'stranger' | 'group'
   profileLoading: { type: Boolean, default: false },  // Profile 操作加载中
+  isGroupMember: { type: Boolean, default: false },   // 当前查看的群聊是否已加入
 });
 
 const emit = defineEmits([
   'close', 'search', 'add-friend',
   'create-group', 'join-group',
+  'group-search',             // 搜索群聊，参数：keyword
+  'send-message-to-group',    // 从搜索结果发群聊消息，参数：group
   'switch-mode',
   // Profile mode events
   'edit-username',          // 修改用户名，参数：newUserName
@@ -145,7 +185,7 @@ const emit = defineEmits([
   'add-friend-from-profile',// 从资料卡添加好友，参数：user
   'delete-friend',          // 删除好友，参数：user
   'dissolve-or-leave-group',// 解散/退出群聊（profile-group），参数：groupObject
-  'view-profile',           // 查看用户资料（搜索结果点击），参数：user
+  'view-profile',           // 查看用户/群聊资料（搜索结果点击），参数：user/group
   'logout',                 // 登出（本人资料卡内）
 ]);
 
@@ -162,6 +202,7 @@ const title = computed(() => {
   if (props.mode === 'profile') {
     if (props.profileContext === 'self') return '个人资料';
     if (props.profileContext === 'friend') return '好友资料';
+    if (props.profileContext === 'group') return '群聊资料';
     return '用户资料';
   }
   if (props.mode === 'friend') return '添加好友';
@@ -210,11 +251,21 @@ function isAlreadyFriend(user) {
   return props.friends.some(f => f.userId === user.userId);
 }
 
+/** 检查当前用户是否已是某群聊成员（注意：与 prop isGroupMember 区分） */
+function checkIsGroupMember(group) {
+  return props.groups.some(g => g.groupId === group.groupId);
+}
+
 /** 检查是否对某用户有待处理的申请 */
 function hasPendingRequest(user) {
   return props.sentRequests.some(
     r => r.receiverId === user.userId && r.status === 0
   );
+}
+
+/** 群聊搜索（带防抖由父组件处理，此处直接 emit） */
+function onGroupSearch() {
+  emit('group-search', searchKeyword.value);
 }
 </script>
 
@@ -227,12 +278,6 @@ function hasPendingRequest(user) {
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.25);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .panel-header {
@@ -275,11 +320,6 @@ function hasPendingRequest(user) {
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-.panel-body::-webkit-scrollbar { width: 4px; }
-.panel-body::-webkit-scrollbar-thumb {
-  background: linear-gradient(135deg, #11998e, #38ef7d);
-  border-radius: 2px;
 }
 
 .panel-search { position: relative; }
@@ -352,6 +392,26 @@ function hasPendingRequest(user) {
   background: rgba(56, 239, 125, 0.35);
   transform: translateY(-1px);
   box-shadow: 0 2px 8px rgba(17, 153, 142, 0.2);
+}
+
+/* 发消息按钮（搜索结果中已是好友/已是群成员时显示） */
+.panel-msg-btn {
+  padding: 4px 14px;
+  border: 1.5px solid rgba(17, 153, 142, 0.4);
+  border-radius: 6px;
+  background: rgba(17, 153, 142, 0.1);
+  color: #11998e;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.panel-msg-btn:hover {
+  background: rgba(17, 153, 142, 0.22);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(17, 153, 142, 0.15);
 }
 
 .panel-friend-tag {

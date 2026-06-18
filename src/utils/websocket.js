@@ -25,9 +25,10 @@ class WebSocketManager {
    */
   connect() {
     const userStore = useUserStore();
-    const token = userStore.token;
+    const token = userStore.token || localStorage.getItem('chat_token');
     if (!token) {
       console.warn('[WebSocket] 无 Token，跳过连接');
+      this.manuallyClosed = true;
       return;
     }
 
@@ -62,8 +63,14 @@ class WebSocketManager {
       }
     };
 
-    this.ws.onclose = () => {
-      console.log('[WebSocket] 连接已关闭');
+    this.ws.onclose = (event) => {
+      console.log('[WebSocket] 连接已关闭, code:', event.code);
+      // 认证失败（后端 WebSocket 握手拒绝）不重连
+      if (event.code === 4001 || event.code === 1008) {
+        console.warn('[WebSocket] 认证失败，停止重连');
+        this.manuallyClosed = true;
+        return;
+      }
       if (!this.manuallyClosed) {
         this.scheduleReconnect();
       }

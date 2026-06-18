@@ -103,8 +103,13 @@ export function useChatMessages(chatTarget, chatType, friends, messageAreaRef, u
           await nextTick();
           messageAreaRef.value?.scrollToBottom();
         }
+      } else {
+        toast.error(res.message || '加载聊天记录失败，请重试');
       }
-    } catch (e) { console.error('加载聊天记录失败:', e); }
+    } catch (e) {
+      console.error('加载聊天记录失败:', e);
+      toast.error('网络异常，加载聊天记录失败');
+    }
     finally { loadingMessages.value = false; loadingMore.value = false; }
   }
 

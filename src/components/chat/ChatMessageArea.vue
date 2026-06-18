@@ -3,7 +3,7 @@
  * 包含聊天头部 + 消息流 + 输入框
  -->
 <template>
-  <div class="chat-card" :class="{ 'mobile-show': mobileShow }">
+  <div class="chat-card glass-card" :class="{ 'mobile-show': mobileShow }">
     <!-- 未选中占位 -->
     <div v-if="!chatTarget" class="no-chat-selected">
       <el-icon :size="64" color="#ccc"><ChatDotSquare /></el-icon>
@@ -72,7 +72,7 @@
               <div class="message-bubble"
                    :class="item.senderId === userId ? 'self-bubble' : 'other-bubble'">
                 {{ item.content }}
-                <span class="message-time">{{ formatMessageTime(item.sendTime) }}</span>
+                <span class="message-time">{{ formatTime(item.sendTime) }}</span>
               </div>
             </div>
           </div>
@@ -103,6 +103,7 @@
 <script setup>
 import { ref, computed, nextTick } from 'vue';
 import { Promotion, ChatDotSquare, ArrowLeft } from '@element-plus/icons-vue';
+import { formatTime, insertTimeDividers } from '@/utils/time';
 
 defineOptions({ name: 'ChatMessageArea' });
 
@@ -157,73 +158,12 @@ function resetInput() {
   inputText.value = '';
 }
 
-function formatMessageTime(t) {
-  if (!t) return '';
-  const normalized = t.replace('T', ' ');
-  if (normalized.length < 16) return normalized;
-  const datePart = normalized.slice(0, 10);
-  const timePart = normalized.slice(11, 16);
-  const today = new Date();
-  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  if (datePart === todayStr) return timePart;
-  return normalized.slice(5, 10) + ' ' + timePart;
-}
-
-/**
- * 格式化时间分隔线标签
- * @param {string} timeStr - ISO时间字符串
- * @returns {string} 格式化后的标签
- */
-function formatDividerLabel(timeStr) {
-  if (!timeStr) return '';
-  const d = new Date(timeStr.replace('T', ' '));
-  if (isNaN(d.getTime())) return '';
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const yesterday = new Date(today - 86400000);
-  const msgDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-
-  if (msgDate.getTime() === today.getTime()) return time;
-  if (msgDate.getTime() === yesterday.getTime()) return `昨天 ${time}`;
-
-  const dayDiff = Math.floor((today - msgDate) / 86400000);
-  if (dayDiff < 7) {
-    const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-    return `${weekDays[d.getDay()]} ${time}`;
-  }
-
-  if (d.getFullYear() === now.getFullYear()) {
-    return `${d.getMonth() + 1}月${d.getDate()}日 ${time}`;
-  }
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${time}`;
-}
-
-/**
- * 带时间分隔线的消息列表
- * 相邻消息间隔超过 5 分钟时自动插入时间标签
- */
-const messagesWithDividers = computed(() => {
-  const list = [];
-  const GAP_MS = 5 * 60 * 1000; // 5分钟
-  const msgs = props.messages;
-
-  for (let i = 0; i < msgs.length; i++) {
-    const msg = msgs[i];
-    if (i === 0) {
-      // 第一条消息始终显示时间
-      list.push({ _divider: true, key: 'div-first', label: formatDividerLabel(msg.sendTime) });
-    } else {
-      const prevTime = new Date(msgs[i - 1].sendTime?.replace('T', ' ')).getTime();
-      const currTime = new Date(msg.sendTime?.replace('T', ' ')).getTime();
-      if (!isNaN(prevTime) && !isNaN(currTime) && currTime - prevTime > GAP_MS) {
-        list.push({ _divider: true, key: `div-${msg.recordId || msg._id}`, label: formatDividerLabel(msg.sendTime) });
-      }
-    }
-    list.push(msg);
-  }
-  return list;
-});
+/** 带时间分隔线的消息列表，相邻消息间隔超过 5 分钟时自动插入时间标签 */
+const messagesWithDividers = computed(() =>
+  insertTimeDividers(props.messages, 'sendTime', {
+    keyFn: (i, item) => item._divider ? `div-${i}` : `div-${item.recordId || item._id}`,
+  })
+);
 </script>
 
 <style scoped>
@@ -236,12 +176,6 @@ const messagesWithDividers = computed(() => {
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.25);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 /* 未选中占位 */
@@ -315,12 +249,6 @@ const messagesWithDividers = computed(() => {
   flex-direction: column;
   gap: 16px;
 }
-.message-flow::-webkit-scrollbar { width: 4px; }
-.message-flow::-webkit-scrollbar-thumb {
-  background: linear-gradient(135deg, #11998e, #38ef7d);
-  border-radius: 2px;
-}
-
 .load-more, .no-more-messages, .time-divider {
   display: flex;
   align-items: center;

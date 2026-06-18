@@ -93,3 +93,42 @@ export function getGroupMembers(groupId) {
     method: 'GET',
   });
 }
+
+/**
+ * 搜索群聊（按群名或群账号模糊匹配）
+ * @param {Object} params - { keyword, page?, size? }
+ * @returns {Promise} 返回分页的群聊搜索结果
+ */
+export function searchGroups(params) {
+  return request({
+    url: '/group/search',
+    method: 'GET',
+    params,
+  });
+}
+
+/**
+ * 加入群聊（发送加群申请）
+ * @param {number} groupId - 群组ID
+ * @returns {Promise} 返回加入结果（成功码 201）
+ */
+export function joinGroup(groupId) {
+  return request({
+    url: `/group/join/${groupId}`,
+    method: 'POST',
+  });
+}
+
+/**
+ * 处理加群申请（群主审批 — 后端 v2.1）
+ * @param {number} groupId - 群组ID
+ * @param {Object} data - { requestId, accept }
+ * @returns {Promise} 返回处理结果
+ */
+export function handleJoinRequest(groupId, data) {
+  return request({
+    url: `/group/${groupId}/join-request/${data.requestId}/handle`,
+    method: 'POST',
+    data: { requestId: data.requestId, accept: data.accept },
+  });
+}

@@ -10,6 +10,7 @@ import {
   getReceivedRequests,
   getSentRequests,
 } from '@/api/friend';
+import { handleJoinRequest } from '@/api/group';
 import { wsManager } from '@/utils/websocket';
 
 /**
@@ -21,7 +22,7 @@ import { wsManager } from '@/utils/websocket';
  * @param {import('vue').Ref<string>} options.mobileView - 移动端视图状态 ref
  * @param {Object} options.toast - Toast 通知对象
  */
-export function useNotifications({ loadFriends, activeView, chatTarget, mobileView, toast }) {
+export function useNotifications({ loadFriends, loadGroups, groups, activeView, chatTarget, mobileView, toast }) {
   // ==================== 通知状态 ====================
   const receivedRequests = ref([]);
   const sentRequests = ref([]);
@@ -34,6 +35,9 @@ export function useNotifications({ loadFriends, activeView, chatTarget, mobileVi
   const hasMoreReceived = ref(true);
   const hasMoreSent = ref(true);
   const pendingRequestCount = ref(0);
+
+  // 群聊加群申请（群主视角）
+  const joinGroupRequests = ref([]);
 
   // ==================== 通知操作 ====================
   /**
@@ -136,8 +140,8 @@ export function useNotifications({ loadFriends, activeView, chatTarget, mobileVi
         // 刷新列表
         receivedPage.value = 1;
         loadReceivedRequests();
-        // 如果同意了申请，刷新好友列表
-        if (accept) loadFriends();
+        // 如果同意了申请，刷新好友列表（已弹 toast，静默刷新）
+        if (accept) loadFriends({ silent: true });
       }
     } catch (e) {
       toast.error('处理申请失败，请重试');
@@ -185,8 +189,8 @@ export function useNotifications({ loadFriends, activeView, chatTarget, mobileVi
   function handleWsFriendRequestResult(msg) {
     const action = msg.content === 'accepted' ? '同意了' : '拒绝了';
     toast.info(`${msg.senderName} ${action}你的好友申请`);
-    // 对方同意后，刷新好友列表（新好友会出现在列表中）
-    if (msg.content === 'accepted') loadFriends();
+    // 对方同意后，刷新好友列表（已弹 toast，静默刷新）
+    if (msg.content === 'accepted') loadFriends({ silent: true });
     // 如果当前在通知面板，刷新发出的申请列表
     if (activeView.value === 'notifications') {
       sentPage.value = 1;
@@ -194,15 +198,94 @@ export function useNotifications({ loadFriends, activeView, chatTarget, mobileVi
     }
   }
 
+  /**
+   * 处理 WebSocket 加群申请通知（群主收到 — 后端 v2.1）
+   * WS 消息格式: { type: 'JOIN_GROUP_REQUEST', groupId, senderId, senderName, content, requestId, sendTime }
+   * 注意：WS 消息不包含 groupName，需从 groups 列表中查找
+   */
+  function handleWsJoinGroupRequest(msg) {
+    const { groupId, senderId, senderName, requestId, sendTime, content } = msg;
+
+    // 去重
+    const exists = joinGroupRequests.value.some(r => r.requestId === requestId);
+    if (exists) return;
+
+    // 从 groups 列表中查找群名，降级使用 content 字段
+    const group = groups.value?.find(g => g.groupId === groupId);
+    const groupName = group?.groupName || (content || '').replace('申请加入群聊 ', '') || `群聊${groupId}`;
+
+    // 存到加群申请列表（最新在上方）
+    joinGroupRequests.value.unshift({
+      _key: `join-req-${requestId}`,
+      requestId,
+      groupId,
+      groupName,
+      senderId,
+      senderName,
+      sendTime: sendTime || new Date().toISOString(),
+      status: 0, // 0=待处理
+    });
+
+    // 最多保留 50 条
+    if (joinGroupRequests.value.length > 50) {
+      joinGroupRequests.value = joinGroupRequests.value.slice(0, 50);
+    }
+
+    toast.info(`${senderName} 申请加入「${groupName}」`);
+  }
+
+  /**
+   * 添加自己发出的加群申请（发送成功后调用，显示在群聊通知中）
+   * @param {Object} data - { groupId, groupName, requestId }
+   */
+  function addSelfJoinRequest(data) {
+    joinGroupRequests.value.unshift({
+      _key: `self-join-${Date.now()}`,
+      requestId: data.requestId || 0,
+      groupId: data.groupId,
+      groupName: data.groupName,
+      senderId: 0,       // 自己发的，不显示头像跳转
+      senderName: '我',
+      sendTime: new Date().toISOString(),
+      status: 0,         // 待处理
+      _isSelf: true,     // 标记为自己发出的
+    });
+  }
+
+  /**
+   * 处理加群申请（群主同意/拒绝）
+   * @param {number} groupId - 群组ID
+   * @param {number} requestId - 申请ID
+   * @param {boolean} accept - 是否同意
+   */
+  async function handleJoinRequestAction(groupId, requestId, accept) {
+    try {
+      const res = await handleJoinRequest(groupId, { requestId, accept });
+      if (res.code === 200 || res.code === 201) {
+        const item = joinGroupRequests.value.find(r => r.requestId === requestId);
+        if (item) {
+          item.status = accept ? 1 : 2;
+        }
+        toast.success(accept ? '已同意入群申请' : '已拒绝入群申请');
+        // 刷新群聊列表（已弹 toast，静默刷新）
+        loadGroups({ silent: true });
+      }
+    } catch (error) {
+      toast.error(error.message || '操作失败，请重试');
+    }
+  }
+
   // ==================== WebSocket 生命周期 ====================
   // 使用包装函数确保每次事件触发时都调用最新的函数引用
   const _wsFriendRequest = (msg) => handleWsFriendRequest(msg);
   const _wsFriendRequestResult = (msg) => handleWsFriendRequestResult(msg);
+  const _wsJoinGroupRequest = (msg) => handleWsJoinGroupRequest(msg);
 
   onMounted(() => {
     loadPendingCount();
     wsManager.on('FRIEND_REQUEST', _wsFriendRequest);
     wsManager.on('FRIEND_REQUEST_RESULT', _wsFriendRequestResult);
+    wsManager.on('JOIN_GROUP_REQUEST', _wsJoinGroupRequest);
   });
 
   return {
@@ -216,6 +299,7 @@ export function useNotifications({ loadFriends, activeView, chatTarget, mobileVi
     hasMoreReceived,
     hasMoreSent,
     pendingRequestCount,
+    joinGroupRequests,
     // 通知操作
     openNotifications,
     loadReceivedRequests,
@@ -223,11 +307,14 @@ export function useNotifications({ loadFriends, activeView, chatTarget, mobileVi
     loadMoreReceived,
     loadMoreSent,
     onHandleRequest,
+    handleJoinRequestAction,
+    addSelfJoinRequest,
     loadPendingCount,
     // 清理（供 Chat.vue 的 onBeforeUnmount 调用）
     _cleanupNotifications() {
       wsManager.off('FRIEND_REQUEST', _wsFriendRequest);
       wsManager.off('FRIEND_REQUEST_RESULT', _wsFriendRequestResult);
+      wsManager.off('JOIN_GROUP_REQUEST', _wsJoinGroupRequest);
     },
   };
 }

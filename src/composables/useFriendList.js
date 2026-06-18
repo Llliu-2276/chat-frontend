@@ -6,8 +6,8 @@
  * @module composables/useFriendList
  */
 import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
-import { getFriendList, getUnreadMessages, getChatHistory } from '@/api/friend';
-import { getGroupList, getGroupHistory } from '@/api/group';
+import { getFriendList, getUnreadMessages } from '@/api/friend';
+import { getGroupList } from '@/api/group';
 import { wsManager } from '@/utils/websocket';
 
 /**
@@ -28,6 +28,9 @@ export function useFriendList(toast) {
   const friendsExpanded = ref(true);
   const groupsExpanded = ref(true);
   const notificationsExpanded = ref(true);
+
+  // 群聊通知列表（群成员加入/退出事件）
+  const groupNotifications = ref([]);
 
   // ==================== 收展操作 ====================
   function toggleFriends() { friendsExpanded.value = !friendsExpanded.value; }
@@ -61,48 +64,45 @@ export function useFriendList(toast) {
   // ==================== 数据加载 ====================
   /**
    * 加载好友列表
-   * 首次加载时会获取每个好友的最后一条消息
+   * 后端 v1.9+ 直接在列表响应中返回 lastMessage/lastMessageTime/unreadCount，无需 N+1 查询
+   * 后端 v2.2+ 支持分页，响应格式为 { content: [...], ... }，需兼容
+   * @param {Object} [options] - 可选配置
+   * @param {boolean} [options.silent=false] - 是否静默失败（后台轮询用）
    */
-  async function loadFriends() {
+  async function loadFriends({ silent = false } = {}) {
     loadingFriends.value = true;
     try {
       const res = await getFriendList();
       if (res.code === 200) {
-        const isFirstLoad = friends.value.length === 0;
-        friends.value = (res.data || []).map(f => {
+        // 后端 v2.2+ 返回分页包装 { content: [...], ... }，v1.x 返回纯数组
+        const list = Array.isArray(res.data) ? res.data : (res.data?.content || []);
+        friends.value = list.map(f => {
           const existing = friends.value.find(old => old.userId === f.userId);
           return {
             ...f,
-            lastMessage: existing?.lastMessage || '',
-            lastMessageTime: existing?.lastMessageTime || '',
-            unreadCount: existing?.unreadCount || 0,
+            // 后端已返回这些字段（v1.9+），保留已有值作为降级
+            lastMessage: f.lastMessage || existing?.lastMessage || '',
+            lastMessageTime: f.lastMessageTime || existing?.lastMessageTime || '',
+            unreadCount: f.unreadCount ?? existing?.unreadCount ?? 0,
           };
         });
-
-        if (isFirstLoad) {
-          await Promise.allSettled(
-            friends.value.map(async (f) => {
-              try {
-                const hRes = await getChatHistory(f.userId, { page: 1, size: 1 });
-                if (hRes.code === 200 && hRes.data?.content?.length > 0) {
-                  const msg = hRes.data.content[0];
-                  f.lastMessage = msg.content;
-                  f.lastMessageTime = msg.sendTime;
-                }
-              } catch (e) { /* 单个好友加载失败不影响整体 */ }
-            })
-          );
-        }
+      } else if (!silent) {
+        toast.error(res.message || '加载好友列表失败，请刷新重试');
       }
-    } catch (e) { console.error('加载好友列表失败:', e); }
+    } catch (e) {
+      console.error('加载好友列表失败:', e);
+      if (!silent) toast.error('网络异常，加载好友列表失败');
+    }
     finally { loadingFriends.value = false; }
   }
 
   /**
    * 轮询获取未读消息
    * 更新好友列表中的未读计数和最后一条消息
+   * @param {Object} [options] - 可选配置
+   * @param {boolean} [options.silent=false] - 是否静默失败（后台轮询用）
    */
-  async function fetchUnreadMessages() {
+  async function fetchUnreadMessages({ silent = false } = {}) {
     try {
       const res = await getUnreadMessages();
       if (res.code === 200 && res.data?.length > 0) {
@@ -123,45 +123,46 @@ export function useFriendList(toast) {
             }
           }
         });
+      } else if (res.code !== 200 && !silent) {
+        // 非200响应（非后台轮询场景）提示用户
+        toast.error(res.message || '获取未读消息失败');
       }
-    } catch (e) { console.error('获取未读消息失败:', e); }
+    } catch (e) {
+      console.error('获取未读消息失败:', e);
+      if (!silent) toast.error('网络异常，获取未读消息失败');
+    }
   }
 
   /**
    * 加载群聊列表
-   * 首次加载时会获取每个群聊的最后一条消息
+   * 后端 v1.9+ 直接在列表响应中返回 lastMessage/lastMessageTime/unreadCount，无需 N+1 查询
+   * 后端 v2.2+ 支持分页，响应格式为 { content: [...], ... }，需兼容
+   * @param {Object} [options] - 可选配置
+   * @param {boolean} [options.silent=false] - 是否静默失败（后台/WS触发用）
    */
-  async function loadGroups() {
+  async function loadGroups({ silent = false } = {}) {
     try {
       const res = await getGroupList();
       if (res.code === 200) {
-        const isFirstLoad = groups.value.length === 0;
-        groups.value = (res.data || []).map(g => {
+        // 后端 v2.2+ 返回分页包装 { content: [...], ... }，v1.x 返回纯数组
+        const list = Array.isArray(res.data) ? res.data : (res.data?.content || []);
+        groups.value = list.map(g => {
           const existing = groups.value.find(old => old.groupId === g.groupId);
           return {
             ...g,
-            lastMessage: existing?.lastMessage || '',
-            lastMessageTime: existing?.lastMessageTime || '',
-            unreadCount: existing?.unreadCount || 0,
+            // 后端已返回这些字段（v1.9+），保留已有值作为降级
+            lastMessage: g.lastMessage || existing?.lastMessage || '',
+            lastMessageTime: g.lastMessageTime || existing?.lastMessageTime || '',
+            unreadCount: g.unreadCount ?? existing?.unreadCount ?? 0,
           };
         });
-
-        if (isFirstLoad) {
-          await Promise.allSettled(
-            groups.value.map(async (g) => {
-              try {
-                const hRes = await getGroupHistory(g.groupId, { page: 1, size: 1 });
-                if (hRes.code === 200 && hRes.data?.content?.length > 0) {
-                  const msg = hRes.data.content[0];
-                  g.lastMessage = msg.senderName + ': ' + msg.content;
-                  g.lastMessageTime = msg.sendTime;
-                }
-              } catch (e) { /* 单个群聊加载失败不影响整体 */ }
-            })
-          );
-        }
+      } else if (!silent) {
+        toast.error(res.message || '加载群聊列表失败，请刷新重试');
       }
-    } catch (e) { console.error('加载群聊列表失败:', e); }
+    } catch (e) {
+      console.error('加载群聊列表失败:', e);
+      if (!silent) toast.error('网络异常，加载群聊列表失败');
+    }
   }
 
   // ==================== WebSocket 事件处理 ====================
@@ -216,10 +217,29 @@ export function useFriendList(toast) {
     }
   }
 
-  /** 处理群成员加入/退出通知（刷新群列表） */
+  /** 处理群成员加入/退出通知（存储通知 + 刷新群列表） */
   function handleWsGroupMemberChange(msg) {
-    toast.info(`「${msg.groupName}」${msg.type === 'GROUP_MEMBER_JOIN' ? '有新成员加入' : '有成员退出'}`);
-    loadGroups();
+    const { type, groupId, groupName, senderId, senderName } = msg;
+    const sendTime = msg.sendTime || new Date().toISOString();
+
+    // 存储到群聊通知列表（最新在上方）
+    groupNotifications.value.unshift({
+      _key: `grp-notif-${Date.now()}-${groupId}-${senderId}`,
+      type,
+      groupId,
+      groupName,
+      senderId,
+      senderName,
+      sendTime,
+    });
+
+    // 限制最多保留 100 条
+    if (groupNotifications.value.length > 100) {
+      groupNotifications.value = groupNotifications.value.slice(0, 100);
+    }
+
+    toast.info(`「${groupName}」${type === 'GROUP_MEMBER_JOIN' ? '有新成员加入' : '有成员退出'}`);
+    loadGroups({ silent: true });
   }
 
   // ==================== WebSocket 生命周期 ====================
@@ -262,6 +282,7 @@ export function useFriendList(toast) {
     friendsExpanded,
     groupsExpanded,
     notificationsExpanded,
+    groupNotifications,
     // 操作
     toggleFriends,
     toggleGroups,

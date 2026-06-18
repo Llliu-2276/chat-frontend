@@ -214,3 +214,87 @@
 .online-indicator.offline {
   background: #ccc;
 }
+
+/* ==================== 磨砂玻璃卡片（统一容器样式） ==================== */
+.glass-card {
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+/* ==================== 绿色按钮（同意/发送/确认操作） ==================== */
+.btn-accept {
+  background: rgba(56, 239, 125, 0.22);
+  color: #333;
+  border: 1.5px solid rgba(56, 239, 125, 0.45);
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.btn-accept:hover:not(:disabled) {
+  background: rgba(56, 239, 125, 0.35);
+  transform: translateY(-2px);
+  box-shadow: 0 2px 8px rgba(17, 153, 142, 0.2);
+}
+.btn-accept:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* ==================== 红色按钮（拒绝/删除/登出等危险操作） ==================== */
+.btn-danger {
+  background: rgba(224, 83, 83, 0.18);
+  color: #333;
+  border: 1.5px solid rgba(224, 83, 83, 0.45);
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.btn-danger:hover:not(:disabled) {
+  background: rgba(224, 83, 83, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 2px 8px rgba(224, 83, 83, 0.2);
+}
+.btn-danger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* ==================== 全局滚动条（所有滚动容器统一风格） ==================== */
+.conversation-list::-webkit-scrollbar,
+.message-flow::-webkit-scrollbar,
+.bubble-flow::-webkit-scrollbar,
+.panel-body::-webkit-scrollbar,
+.panel-results::-webkit-scrollbar {
+  width: 4px;
+}
+.conversation-list::-webkit-scrollbar-thumb,
+.message-flow::-webkit-scrollbar-thumb,
+.bubble-flow::-webkit-scrollbar-thumb,
+.panel-body::-webkit-scrollbar-thumb,
+.panel-results::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, #11998e, #38ef7d);
+  border-radius: 2px;
+}
+.conversation-list::-webkit-scrollbar-track,
+.message-flow::-webkit-scrollbar-track,
+.bubble-flow::-webkit-scrollbar-track,
+.panel-body::-webkit-scrollbar-track,
+.panel-results::-webkit-scrollbar-track {
+  background: transparent;
+}

@@ -51,7 +51,7 @@
 
 | 接口 | 方法 | 路径 | 认证 |
 |-----|------|------|------|
-| 好友列表 | GET | `/api/friends/list` | ✅ |
+| 好友列表 | GET | `/api/friends/list?page=1&size=20` | ✅ |
 | 未读消息 | GET | `/api/friends/messages/unread` | ✅ |
 | 聊天记录 | GET | `/api/friends/chat-history/{friendId}?page=1&size=20` | ✅ |
 | 发送消息 | POST | `/api/friends/send-message` | ✅ |
@@ -60,8 +60,10 @@
 | 查询收到的申请 | GET | `/api/friends/request/received?status=0&page=1&size=20` | ✅ |
 | 查询发出的申请 | GET | `/api/friends/request/sent?page=1&size=20` | ✅ |
 | 删除好友 | DELETE | `/api/friends/remove/{friendId}` | ✅ |
+| 撤回私聊消息 | POST | `/api/friends/message/{recordId}/recall` | ✅ |
+| 搜索私聊消息 | GET | `/api/friends/chat-history/{friendId}/search?keyword=` | ✅ |
 
-> **注意**：好友添加必须通过申请-同意流程，不存在直接添加好友的接口。发出的好友申请不支持撤回。
+> **注意**：好友添加必须通过申请-同意流程，不存在直接添加好友的接口。撤回消息仅限发送者，且2分钟内可撤回。
 
 ### 群组接口
 
@@ -78,10 +80,26 @@
 | 加入群聊 | POST | `/api/group/join/{groupId}` | ✅ |
 | 标记群消息已读 | POST | `/api/group/{groupId}/read/{recordId}` | ✅ |
 | 群未读消息数 | GET | `/api/group/{groupId}/unread-count` | ✅ |
+| 查看入群申请 | GET | `/api/group/{groupId}/join-requests` | ✅ |
+| 处理入群申请 | POST | `/api/group/{groupId}/join-request/{requestId}/handle` | ✅ |
+| 群通知列表 | GET | `/api/group/{groupId}/notifications` | ✅ |
+| 踢出群成员 | DELETE | `/api/group/{groupId}/member/{targetUserId}` | ✅ |
+| 转让群主 | POST | `/api/group/{groupId}/transfer/{targetUserId}` | ✅ |
+| 邀请好友入群 | POST | `/api/group/{groupId}/invite/{inviteeId}` | ✅ |
+| 撤回群聊消息 | POST | `/api/group/{groupId}/message/{recordId}/recall` | ✅ |
+| 搜索群聊消息 | GET | `/api/group/history/{groupId}/search?keyword=` | ✅ |
 
 > **注意**：群主解散群聊会清除所有成员和聊天记录且不可恢复；非群主只能退出群聊。搜索群聊支持按群名和群号模糊匹配。
 
 ---
+
+### 用户拉黑接口
+
+| 接口 | 方法 | 路径 | 认证 |
+|-----|------|------|------|
+| 拉黑用户 | POST | `/api/user/block` | ✅ |
+| 取消拉黑 | DELETE | `/api/user/block/{blockedId}` | ✅ |
+| 黑名单列表 | GET | `/api/user/blocked-list` | ✅ |
 
 ## 📡 WebSocket 实时通信
 
@@ -104,6 +122,8 @@
 | `READ_RECEIPT` | S→C | 消息已读回执 |
 | `HEARTBEAT` | S→C | 心跳响应 |
 | `GROUP_READ_RECEIPT` | C→S | 群聊消息已读回执（字段：senderId, groupId, recordId） |
+| `MESSAGE_RECALL` | S→C | 消息撤回通知（字段：senderId, senderName, recordId, groupId/receiverId） |
+| `GROUP_OWNER_TRANSFERRED` | S→C | 群主转让通知（字段：groupId, senderId旧群主, targetUserId新群主） |
 | `ERROR` | S→C | 错误通知 |
 
 > 详细对接说明见 [WEBSOCKET_UPGRADE.md](./WEBSOCKET_UPGRADE.md)

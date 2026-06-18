@@ -24,6 +24,7 @@
         :groups-expanded="groupsExpanded"
         :notifications-expanded="notificationsExpanded"
         :pending-request-count="pendingRequestCount"
+        :group-notification-count="groupNotifications.length"
         :active-view="activeView"
         :mobile-show="mobileView === 'list'"
         :loading-friends="loadingFriends"
@@ -35,12 +36,13 @@
         @group-action="handleGroupAction"
         @logout="handleLogout"
         @open-side-panel="openSidePanel"
-        @open-notifications="openNotifications"
+        @open-notifications="openFriendNotifications"
+        @open-group-notifications="openGroupNotifications"
         @open-profile="openSelfProfile"
       />
 
       <!-- 聊天消息区 / 通知面板（条件渲染） -->
-      <template v-if="activeView === 'notifications'">
+      <template v-if="activeView === 'notifications' || activeView === 'notifications-group'">
         <ChatNotificationPanel
           :received-requests="receivedRequests"
           :sent-requests="sentRequests"
@@ -51,10 +53,15 @@
           :has-more-received="hasMoreReceived"
           :has-more-sent="hasMoreSent"
           :pending-count="pendingRequestCount"
+          :group-notifications="groupNotifications"
+          :join-group-requests="joinGroupRequests"
+          :initial-tab="notificationTab"
           :mobile-show="mobileView === 'chat'"
           @handle-request="onHandleRequest"
+          @handle-join-request="handleJoinRequestAction"
           @load-more="loadMoreRequests"
           @back-to-list="mobileView = 'list'"
+          @view-profile="onViewProfile"
         />
       </template>
       <template v-else>
@@ -85,16 +92,23 @@
         :search-results="panelSearchResults"
         :searching="panelSearching"
         :friends="friends"
+        :groups="groups"
         :sent-requests="sentRequests"
         :sending-request-ids="sendingRequestIds"
+        :group-search-results="groupSearchResults"
+        :group-searching="groupSearching"
+        :joining-group-ids="joiningGroupIds"
         :profile-user="profileUser"
         :profile-context="profileContext"
         :profile-loading="profileLoading"
+        :is-group-member="isGroupMember"
         @close="handlePanelClose"
         @search="handlePanelSearch"
         @add-friend="handleAddFriend"
         @create-group="handleCreateGroup"
         @join-group="handleJoinGroup"
+        @group-search="handlePanelGroupSearch"
+        @send-message-to-group="handleSendMessageToGroup"
         @edit-username="handleEditUsername"
         @change-password="handleChangePassword"
         @send-message-to="handleSendMessageTo"
@@ -121,7 +135,7 @@ import { ref, inject, onMounted, onBeforeUnmount } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import { wsManager } from '@/utils/websocket';
-import { ElMessageBox } from 'element-plus';
+import { ElMessageBox, ElMessage } from 'element-plus';
 
 import ChatLeftPanel from '@/components/chat/ChatLeftPanel.vue';
 import ChatMessageArea from '@/components/chat/ChatMessageArea.vue';
@@ -143,6 +157,7 @@ const {
   friends, groups, loadingFriends,
   chatTarget, chatType, mobileView, activeView,
   friendsExpanded, groupsExpanded, notificationsExpanded,
+  groupNotifications,
   toggleFriends, toggleGroups, toggleNotifications,
   onSelectFriend: _selectFriend, onSelectGroup: _selectGroup,
   loadFriends, loadGroups, fetchUnreadMessages,
@@ -162,31 +177,50 @@ const {
   loadingMoreReceived, loadingMoreSent,
   hasMoreReceived, hasMoreSent,
   pendingRequestCount,
+  joinGroupRequests,
   openNotifications,
   loadMoreReceived, loadMoreSent,
-  onHandleRequest,
+  onHandleRequest, handleJoinRequestAction,
   _cleanupNotifications,
-} = useNotifications({ loadFriends, activeView, chatTarget, mobileView, toast });
+  addSelfJoinRequest,
+} = useNotifications({ loadFriends, loadGroups, groups, activeView, chatTarget, mobileView, toast });
 
 const {
   showSidePanel, sidePanelMode, groupSubMode,
   panelSearchResults, panelSearching,
-  sendingRequestIds,
+  groupSearchResults, groupSearching,
+  sendingRequestIds, joiningGroupIds,
   handleGroupAction, openSidePanel, closeSidePanel,
-  handlePanelSearch, handleAddFriend,
-  handleCreateGroup, handleJoinGroup,
+  handlePanelSearch, handlePanelGroupSearch, handleAddFriend,
+  handleCreateGroup, handleJoinGroup, handleSendMessageToGroup: _sendMessageToGroup,
   _cleanupSidePanel,
-} = useSidePanel({ toast, sentRequests, loadGroups });
+} = useSidePanel({ toast, sentRequests, loadGroups, onJoinRequestSent: addSelfJoinRequest });
 
 const {
   profileUser, profileContext, profileLoading,
-  isFriend,
+  isFriend, isGroupMember,
   handlePanelClose,
   openSelfProfile, onViewProfile, onViewGroupProfile,
   handleEditUsername, handleChangePassword, handleDeleteFriend,
   handleDissolveOrLeaveGroup,
   handleSendMessageTo: _sendMessageTo, handleAddFriendFromProfile: _addFriendFromProfile,
-} = useProfile({ toast, friends, chatTarget, chatType, resetChat, closeSidePanel, loadFriends, sidePanelMode, groupSubMode, showSidePanel });
+} = useProfile({ toast, friends, groups, chatTarget, chatType, resetChat, closeSidePanel, loadFriends, loadGroups, sidePanelMode, groupSubMode, showSidePanel });
+
+// ==================== 通知面板 Tab 控制 ====================
+const notificationTab = ref('friend');
+
+function openFriendNotifications() {
+  notificationTab.value = 'friend';
+  openNotifications();
+}
+
+function openGroupNotifications() {
+  notificationTab.value = 'group';
+  // 直接设置 activeView，不走 openNotifications()（群聊通知不需要加载好友申请数据）
+  activeView.value = 'notifications-group';
+  chatTarget.value = null;
+  mobileView.value = 'chat';
+}
 
 // ==================== 登出 ====================
 const isLoggingOut = ref(false);
@@ -237,6 +271,15 @@ function handleAddFriendFromProfile(user) {
   if (result) handleAddFriend(result);
 }
 
+/**
+ * 从群聊搜索结果切换到群聊
+ * @param {Object} group - 群聊对象
+ */
+function handleSendMessageToGroup(group) {
+  const result = _sendMessageToGroup(group);
+  if (result) onSelectGroup(result);
+}
+
 // ==================== 好友/群聊选择（跨 composable 编排） ====================
 async function onSelectFriend(friend) {
   _selectFriend(friend);
@@ -255,21 +298,36 @@ function loadMoreRequests() {
   if (hasMoreSent.value) loadMoreSent();
 }
 
+// ==================== WebSocket 认证错误处理 ====================
+function handleWsAuthError(msg) {
+  if (msg.error?.includes('认证') || msg.error?.includes('Token') || msg.error?.includes('未授权') || msg.error?.includes('登录')) {
+    console.error('[Chat] WebSocket 认证失败，强制登出');
+    ElMessage.error('登录已过期，请重新登录');
+    userStore.clearUserState();
+    router.push('/login');
+  }
+}
+
 // ==================== 生命周期 ====================
 let unreadTimer = null, friendListTimer = null;
 
 onMounted(async () => {
+  // 注册 WS 认证错误处理
+  wsManager.on('ERROR', handleWsAuthError);
+
   // WebSocket 连接（各 composable 已自行注册事件监听）
   if (!wsManager.isConnected && !wsManager.isConnecting) wsManager.connect();
 
   await loadFriends();
   await loadGroups();
   await fetchUnreadMessages();
-  unreadTimer = setInterval(fetchUnreadMessages, 30000);
-  friendListTimer = setInterval(loadFriends, 60000);
+  // 后台轮询：静默失败，不弹 toast 打扰用户
+  unreadTimer = setInterval(() => fetchUnreadMessages({ silent: true }), 30000);
+  friendListTimer = setInterval(() => loadFriends({ silent: true }), 60000);
 });
 
 onBeforeUnmount(() => {
+  wsManager.off('ERROR', handleWsAuthError);
   if (unreadTimer) clearInterval(unreadTimer);
   if (friendListTimer) clearInterval(friendListTimer);
   _cleanupNotifications();
@@ -339,103 +397,10 @@ onBeforeUnmount(() => {
 }
 </style>
 
-<!-- 好友申请弹框样式（unscoped，ElMessageBox 渲染在 body 下） -->
+<!-- ElMessageBox 弹框公共样式（unscoped，渲染在 body 下） -->
 <style>
-.add-friend-dialog {
-  border-radius: 16px !important;
-  overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15), 0 4px 16px rgba(0, 0, 0, 0.08) !important;
-}
-.add-friend-dialog .el-message-box__header {
-  padding: 20px 24px 12px;
-  border-bottom: none;
-}
-.add-friend-dialog .el-message-box__title {
-  font-size: 17px;
-  font-weight: 700;
-  color: #11998e;
-}
-.add-friend-dialog .el-message-box__content {
-  padding: 0 24px 16px;
-}
-.add-friend-dialog .el-message-box__message {
-  margin-bottom: 12px;
-}
-.add-friend-dialog-user {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
-  background: rgba(98, 210, 162, 0.08);
-  border-radius: 12px;
-}
-.add-friend-avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #11998e, #38ef7d);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-.add-friend-info {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-.add-friend-name {
-  font-size: 15px;
-  font-weight: 600;
-  color: #333;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.add-friend-account {
-  font-size: 13px;
-  color: #999;
-}
-.add-friend-dialog .el-textarea__inner {
-  border-radius: 10px;
-  border-color: rgba(17, 153, 142, 0.25);
-  resize: none;
-  font-size: 14px;
-  padding: 10px 14px;
-  line-height: 1.5;
-}
-.add-friend-dialog .el-textarea__inner:focus {
-  border-color: #11998e;
-  box-shadow: 0 0 0 2px rgba(17, 153, 142, 0.12);
-}
-.add-friend-dialog .el-message-box__btns {
-  padding: 12px 24px 20px;
-}
-.add-friend-dialog .el-button--primary {
-  background: rgba(56, 239, 125, 0.22);
-  color: #333;
-  border: 1.5px solid rgba(56, 239, 125, 0.45);
-  border-radius: 20px;
-  padding: 8px 24px;
-  font-weight: 600;
-}
-.add-friend-dialog .el-button--primary:hover {
-  background: rgba(56, 239, 125, 0.35);
-  box-shadow: 0 2px 8px rgba(17, 153, 142, 0.2);
-  transform: translateY(-1px);
-}
-.add-friend-dialog .el-button--default {
-  border-radius: 20px;
-  padding: 8px 24px;
-  font-weight: 600;
-  color: #666;
-}
-
-/* ==================== 确认对话框（登出/删除好友等）— 磨砂玻璃卡片 ==================== */
+/* ==================== 公用：磨砂玻璃卡片容器 ==================== */
+.add-friend-dialog,
 .confirm-dialog {
   border-radius: 16px !important;
   overflow: hidden;
@@ -445,43 +410,138 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(255, 255, 255, 0.5) !important;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.06) !important;
 }
+
+/* 公用：标题栏 */
+.add-friend-dialog .el-message-box__header,
 .confirm-dialog .el-message-box__header {
   padding: 22px 24px 12px;
   border-bottom: none;
 }
+
+/* 公用：标题文字 */
+.add-friend-dialog .el-message-box__title,
 .confirm-dialog .el-message-box__title {
   font-size: 17px;
   font-weight: 700;
   color: #333;
 }
-.confirm-dialog .el-message-box__content {
-  padding: 0 24px 20px;
-}
-.confirm-dialog .el-message-box__message p {
-  font-size: 14px;
-  color: #555;
-  line-height: 1.6;
-}
+
+/* 公用：按钮栏 */
+.add-friend-dialog .el-message-box__btns,
 .confirm-dialog .el-message-box__btns {
   padding: 12px 24px 20px;
 }
-.confirm-dialog .el-button--primary {
+
+/* ==================== 申请弹窗专属 ==================== */
+.add-friend-dialog .el-message-box__content {
+  padding: 0 24px 16px;
+}
+.add-friend-dialog .el-message-box__message {
+  margin-bottom: 12px;
+}
+
+/* 信息卡片：头像左 + 名称/详情右，水平居中 */
+.request-dialog-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 16px 18px;
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+}
+.request-dialog-avatar {
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #11998e, #38ef7d);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 17px; font-weight: 700;
+  flex-shrink: 0;
+}
+.request-dialog-info {
+  display: flex; flex-direction: column; gap: 2px; min-width: 0;
+}
+.request-dialog-name {
+  font-size: 14px; font-weight: 600; color: #333;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.request-dialog-sub {
+  font-size: 12px; color: #999;
+}
+.request-dialog-label {
+  display: block;
+  font-size: 13px; color: #888;
+  margin: 14px 0 6px;
+}
+
+/* 输入框 */
+.add-friend-dialog .el-textarea__inner {
+  border-radius: 10px;
+  border-color: rgba(17, 153, 142, 0.2);
+  background: rgba(255, 255, 255, 0.45);
+  resize: none;
+  font-size: 14px; padding: 10px 14px; line-height: 1.5;
+  box-shadow: none !important;
+}
+.add-friend-dialog .el-textarea__inner:focus {
+  border-color: #23f12e !important;
+  box-shadow: 0 0 0 3px rgba(17, 153, 142, 0.15) !important;
+}
+
+/* 按钮：发送申请=绿  取消=红 */
+.add-friend-dialog .el-button--primary {
   background: rgba(56, 239, 125, 0.22);
   color: #333;
   border: 1.5px solid rgba(56, 239, 125, 0.45);
-  border-radius: 8px;
-  padding: 8px 24px;
-  font-weight: 600;
+  border-radius: 8px; padding: 8px 24px; font-weight: 600;
 }
-.confirm-dialog .el-button--primary:hover {
+.add-friend-dialog .el-button--primary:hover {
   background: rgba(56, 239, 125, 0.35);
   box-shadow: 0 2px 8px rgba(17, 153, 142, 0.2);
   transform: translateY(-1px);
 }
-.confirm-dialog .el-button--default {
-  border-radius: 8px;
-  padding: 8px 24px;
-  font-weight: 600;
-  color: #666;
+.add-friend-dialog .el-button:not(.el-button--primary) {
+  background: rgba(224, 83, 83, 0.18);
+  color: #333;
+  border: 1.5px solid rgba(224, 83, 83, 0.45);
+  border-radius: 8px; padding: 8px 24px; font-weight: 600;
+}
+.add-friend-dialog .el-button:not(.el-button--primary):hover {
+  background: rgba(224, 83, 83, 0.3);
+  box-shadow: 0 2px 8px rgba(224, 83, 83, 0.2);
+  transform: translateY(-1px);
+}
+
+/* ==================== 确认弹窗专属（登出/删除好友等） ==================== */
+.confirm-dialog .el-message-box__content {
+  padding: 0 24px 20px;
+}
+.confirm-dialog .el-message-box__message p {
+  font-size: 14px; color: #555; line-height: 1.6;
+}
+/* 按钮：确认危险操作=红  取消=绿 */
+.confirm-dialog .el-button--primary {
+  background: rgba(224, 83, 83, 0.18);
+  color: #333;
+  border: 1.5px solid rgba(224, 83, 83, 0.45);
+  border-radius: 8px; padding: 8px 24px; font-weight: 600;
+}
+.confirm-dialog .el-button--primary:hover {
+  background: rgba(224, 83, 83, 0.3);
+  box-shadow: 0 2px 8px rgba(224, 83, 83, 0.2);
+  transform: translateY(-2px);
+}
+.confirm-dialog .el-button:not(.el-button--primary) {
+  background: rgba(56, 239, 125, 0.22);
+  color: #333;
+  border: 1.5px solid rgba(56, 239, 125, 0.45);
+  border-radius: 8px; padding: 8px 24px; font-weight: 600;
+}
+.confirm-dialog .el-button:not(.el-button--primary):hover {
+  background: rgba(56, 239, 125, 0.35);
+  box-shadow: 0 2px 8px rgba(17, 153, 142, 0.2);
+  transform: translateY(-1px);
 }
 </style>

@@ -8,6 +8,8 @@ import axios from 'axios';
 import { getToken, removeToken, removeUserInfo } from '@/utils/storage';
 import { heartbeatManager } from '@/utils/heartbeat';
 import { wsManager } from '@/utils/websocket';
+import { useUserStore } from '@/stores/user';
+import { ElMessage } from 'element-plus';
 import router from '@/router';
 
 // 创建 axios 实例
@@ -111,26 +113,46 @@ service.interceptors.response.use(
   },
 );
 
+/** 防止重复执行 handleUnauthorized 的标志位 */
+let isHandlingUnauthorized = false;
+
 /**
  * 处理未授权情况
- * 清除本地存储、停止心跳、断开 WebSocket 并跳转到登录页
- * 与后端文档同步：401 场景必须完整清除所有认证状态
+ * 清除本地存储、停止心跳、断开 WebSocket、显示提示并跳转到登录页
+ * 与 useUserStore.clearUserState 保持一致的清理逻辑
  */
 function handleUnauthorized() {
-  // 清除本地存储
+  // 防止多个 401 响应并发执行
+  if (isHandlingUnauthorized) return;
+  isHandlingUnauthorized = true;
+
+  // 1. 清除 Pinia Store 内存状态（确保 UI 立即反映登出状态）
+  const userStore = useUserStore();
+  userStore.token = '';
+  userStore.userInfo = null;
+
+  // 2. 清除 localStorage
   removeToken();
   removeUserInfo();
 
-  // 停止心跳和 WebSocket（与 useUserStore.clearUserState 保持一致）
+  // 3. 停止心跳和 WebSocket
   heartbeatManager.stop();
   wsManager.disconnect();
 
-  // 跳转到登录页
-  if (router.currentRoute.value.path !== '/login') {
+  // 4. 提示用户
+  ElMessage.error('登录已过期，请重新登录');
+
+  // 5. 跳转到登录页
+  const currentPath = router.currentRoute.value.path;
+  if (currentPath !== '/login') {
     router.push({
       path: '/login',
       query: { redirect: router.currentRoute.value.fullPath },
+    }).finally(() => {
+      isHandlingUnauthorized = false;
     });
+  } else {
+    isHandlingUnauthorized = false;
   }
 }
 

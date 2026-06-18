@@ -4,7 +4,7 @@
  *
  * @module composables/useProfile
  */
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import { updateUserName, changePassword } from '@/api/user';
@@ -26,13 +26,13 @@ import { ElMessageBox } from 'element-plus';
  * @param {import('vue').Ref<string>} options.groupSubMode - 群组子模式 ref
  * @param {import('vue').Ref<boolean>} options.showSidePanel - 面板可见性 ref
  */
-export function useProfile({ toast, friends, chatTarget, chatType, resetChat, closeSidePanel, loadFriends, sidePanelMode, groupSubMode, showSidePanel }) {
+export function useProfile({ toast, friends, groups, chatTarget, chatType, resetChat, closeSidePanel, loadFriends, loadGroups, sidePanelMode, groupSubMode, showSidePanel }) {
   const userStore = useUserStore();
   const router = useRouter();
 
   // ==================== Profile 状态 ====================
   const profileUser = ref(null);         // 当前查看的用户对象
-  const profileContext = ref('self');    // 'self' | 'friend' | 'stranger'
+  const profileContext = ref('self');    // 'self' | 'friend' | 'stranger' | 'group'
   const profileLoading = ref(false);     // Profile 操作加载中
   /** 面板导航历史栈，用于 profile 返回上一视图 */
   const panelHistory = ref([]);
@@ -42,6 +42,12 @@ export function useProfile({ toast, friends, chatTarget, chatType, resetChat, cl
   function isFriend(userId) {
     return friends.value.some(f => f.userId === userId);
   }
+
+  /** 判断当前查看的群聊用户是否已加入（computed 确保响应式） */
+  const isGroupMember = computed(() => {
+    if (!profileUser.value?.groupId) return false;
+    return groups.value.some(g => g.groupId === profileUser.value.groupId);
+  });
 
   // ==================== 面板导航 ====================
   /**
@@ -165,7 +171,7 @@ export function useProfile({ toast, friends, chatTarget, chatType, resetChat, cl
           chatTarget.value = null;
           resetChat();
         }
-        await loadFriends();
+        await loadFriends({ silent: true });
       }
     } catch (error) {
       toast.error(error.message || '删除好友失败，请重试');
@@ -219,7 +225,7 @@ export function useProfile({ toast, friends, chatTarget, chatType, resetChat, cl
           chatTarget.value = null;
           resetChat();
         }
-        loadFriends(); // 同时刷新群列表
+        loadGroups({ silent: true }); // 刷新群列表（已弹 toast，静默刷新）
       }
     } catch (error) {
       toast.error(error.message || '操作失败，请重试');
@@ -254,6 +260,7 @@ export function useProfile({ toast, friends, chatTarget, chatType, resetChat, cl
     profileLoading,
     // 工具
     isFriend,
+    isGroupMember,
     // 面板导航
     handlePanelClose,
     // 查看资料

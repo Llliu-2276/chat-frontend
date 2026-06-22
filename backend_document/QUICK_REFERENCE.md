@@ -7,6 +7,7 @@
 ## 📡 基础信息
 
 - **API基础路径**: `http://localhost:8080/api`
+- **Swagger UI**: `http://localhost:8080/swagger-ui/index.html`
 - **认证方式**: JWT Token (Bearer)
 - **数据格式**: JSON
 - **跨域**: 已配置CORS
@@ -37,7 +38,7 @@
 | 接口 | 方法 | 路径 | 认证 |
 |-----|------|------|------|
 | 搜索用户 | GET | `/api/user/search?keyword=xx&page=1&size=10` | ✅ |
-| 在线人数 | GET | `/api/user/search/count` | ✅ |
+| 在线人数 | GET | `/api/user/search/count` | ❌ |
 
 > **搜索参数约束**：关键词不能为空，最多20字符；每页大小 1-50；页码 ≥ 1。
 
@@ -588,4 +589,4 @@ ws.send(JSON.stringify({
 
 ---
 
-**快速参考手册 v1.9** | 更新于 2026-06-17
+**快速参考手册 v2.6** | 更新于 2026-06-22

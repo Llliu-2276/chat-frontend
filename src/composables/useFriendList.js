@@ -7,7 +7,7 @@
  */
 import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import { getFriendList, getUnreadMessages } from '@/api/friend';
-import { getGroupList } from '@/api/group';
+import { getGroupList, getGroupNotifications } from '@/api/group';
 import { wsManager } from '@/utils/websocket';
 
 // ==================== 群聊未读持久化 ====================
@@ -249,10 +249,68 @@ export function useFriendList(toast) {
     saveGroupUnreadCache(groups.value);
   }
 
+  /**
+   * 根据 groupId 从本地 groups[] 查找群名（WS 消息不保证携带 groupName 字段）
+   * @param {number} groupId
+   * @returns {string}
+   */
+  function resolveGroupName(groupId) {
+    const g = groups.value.find(x => x.groupId === groupId);
+    return g?.groupName || `群聊${groupId}`;
+  }
+
+  /**
+   * 从后端 REST 加载群通知历史
+   * 遍历当前用户所在的所有群，拉取每群第一页通知历史，合并到 groupNotifications
+   * 已存在的通知（通过 _key 去重）不会重复添加，最多加载前 5 个群
+   */
+  async function loadGroupNotificationsHistory() {
+    const targetGroups = groups.value.slice(0, 5);
+    if (targetGroups.length === 0) {
+      console.log('[通知] 没有群聊，跳过通知历史加载');
+      return;
+    }
+    console.log('[通知] 为', targetGroups.length, '个群加载通知历史');
+    const existingKeys = new Set(groupNotifications.value.map(n => n._key));
+    for (const g of targetGroups) {
+      try {
+        const res = await getGroupNotifications(g.groupId, { page: 1, size: 20 });
+        if (res.code === 200 && res.data) {
+          const list = Array.isArray(res.data) ? res.data : (res.data.content || []);
+          let added = 0;
+          for (const item of list) {
+            const key = item.id ? `hist-notif-${item.id}` : `hist-notif-${g.groupId}-${item.sendTime}-${item.senderId}`;
+            if (existingKeys.has(key)) continue;
+            existingKeys.add(key);
+            groupNotifications.value.push({
+              _key: key,
+              _type: 'member-change',
+              type: item.type || item.notificationType || 'GROUP_MEMBER_JOIN',
+              groupId: g.groupId,
+              groupName: g.groupName,
+              senderId: item.senderId || item.userId || 0,
+              senderName: item.senderName || item.userName || '',
+              content: item.content || item.message || '',
+              sendTime: item.sendTime || item.createTime || new Date().toISOString(),
+            });
+            added++;
+          }
+          if (added > 0) console.log('[通知] 群「' + g.groupName + '」加载', added, '条历史通知');
+        }
+      } catch (e) {
+        console.error('[通知] 加载群「' + g.groupName + '」通知历史失败:', e);
+      }
+    }
+    // 按时间降序重排
+    groupNotifications.value.sort((a, b) => (b.sendTime || '').localeCompare(a.sendTime || ''));
+  }
+
   /** 处理群成员加入/退出通知（存储通知 + 刷新群列表） */
   function handleWsGroupMemberChange(msg) {
-    const { type, groupId, groupName, senderId, senderName } = msg;
+    console.log('[通知] 收到 WS', msg.type, ':', JSON.stringify(msg));
+    const { type, groupId, senderId, senderName } = msg;
     const sendTime = msg.sendTime || new Date().toISOString();
+    const groupName = msg.groupName || resolveGroupName(groupId);
 
     // 存储到群聊通知列表（最新在上方）
     groupNotifications.value.unshift({
@@ -274,6 +332,61 @@ export function useFriendList(toast) {
     loadGroups({ silent: true });
   }
 
+  /** 处理群聊解散通知 */
+  function handleWsGroupDisbanded(msg) {
+    console.log('[通知] 收到 WS GROUP_DISBANDED:', JSON.stringify(msg));
+    const { groupId, senderId, senderName, content, sendTime } = msg;
+    const groupName = resolveGroupName(groupId);
+
+    groupNotifications.value.unshift({
+      _key: `grp-disbanded-${Date.now()}-${groupId}`,
+      type: 'GROUP_DISBANDED',
+      groupId,
+      groupName,
+      senderId,
+      senderName,
+      content: content || `「${groupName}」已被群主解散`,
+      sendTime: sendTime || new Date().toISOString(),
+    });
+
+    if (groupNotifications.value.length > 100) {
+      groupNotifications.value = groupNotifications.value.slice(0, 100);
+    }
+
+    toast.info(content || `「${groupName}」已被群主解散`);
+    // 如果当前正在该群聊中，清空聊天区
+    if (chatTarget.value?.groupId === groupId && chatType.value === 'group') {
+      chatTarget.value = null;
+    }
+    loadGroups({ silent: true });
+  }
+
+  /** 处理群主转让通知 */
+  function handleWsGroupOwnerTransferred(msg) {
+    console.log('[通知] 收到 WS GROUP_OWNER_TRANSFERRED:', JSON.stringify(msg));
+    const { groupId, senderId, senderName, targetUserId, content, sendTime } = msg;
+    const groupName = resolveGroupName(groupId);
+
+    groupNotifications.value.unshift({
+      _key: `grp-transfer-${Date.now()}-${groupId}`,
+      type: 'GROUP_OWNER_TRANSFERRED',
+      groupId,
+      groupName,
+      senderId,
+      senderName,
+      targetUserId,
+      content: content || `${senderName} 将群主转让给新群主`,
+      sendTime: sendTime || new Date().toISOString(),
+    });
+
+    if (groupNotifications.value.length > 100) {
+      groupNotifications.value = groupNotifications.value.slice(0, 100);
+    }
+
+    toast.info(content || `「${groupName}」群主已变更`);
+    loadGroups({ silent: true });
+  }
+
   // ==================== WebSocket 生命周期 ====================
   onMounted(() => {
     wsManager.on('FRIEND_ONLINE', handleWsFriendOnline);
@@ -282,6 +395,8 @@ export function useFriendList(toast) {
     wsManager.on('GROUP_MESSAGE', handleWsGroupMessage);
     wsManager.on('GROUP_MEMBER_JOIN', handleWsGroupMemberChange);
     wsManager.on('GROUP_MEMBER_LEAVE', handleWsGroupMemberChange);
+    wsManager.on('GROUP_DISBANDED', handleWsGroupDisbanded);
+    wsManager.on('GROUP_OWNER_TRANSFERRED', handleWsGroupOwnerTransferred);
   });
 
   onBeforeUnmount(() => {
@@ -291,6 +406,8 @@ export function useFriendList(toast) {
     wsManager.off('GROUP_MESSAGE', handleWsGroupMessage);
     wsManager.off('GROUP_MEMBER_JOIN', handleWsGroupMemberChange);
     wsManager.off('GROUP_MEMBER_LEAVE', handleWsGroupMemberChange);
+    wsManager.off('GROUP_DISBANDED', handleWsGroupDisbanded);
+    wsManager.off('GROUP_OWNER_TRANSFERRED', handleWsGroupOwnerTransferred);
   });
 
   // ==================== 侦听器 ====================
@@ -328,5 +445,6 @@ export function useFriendList(toast) {
     loadFriends,
     loadGroups,
     fetchUnreadMessages,
+    loadGroupNotificationsHistory,
   };
 }

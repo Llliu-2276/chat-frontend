@@ -36,6 +36,7 @@ npm run dev
 | [组件说明](./COMPONENTS.md) | 所有组件的 Props、Events、使用方式 |
 | [API 调用规范](./API_GUIDE.md) | 接口封装、环境变量、错误处理约定 |
 | [状态管理](./STATE_MANAGEMENT.md) | Pinia Store 结构、心跳、WebSocket |
+| [编码规范](./CODE_STANDARDS.md) | 文件命名、组件/API/WS 编写规范、防御性检查清单 |
 | [部署手册](./NGINX_DEPLOYMENT.md) | Nginx、内网穿透、发布流程、故障排查 |
 
 ### 后端文档（`../backend_document/`）

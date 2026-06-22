@@ -161,6 +161,7 @@ const {
   toggleFriends, toggleGroups, toggleNotifications,
   onSelectFriend: _selectFriend, onSelectGroup: _selectGroup,
   loadFriends, loadGroups, fetchUnreadMessages,
+  loadGroupNotificationsHistory,
 } = useFriendList(toast);
 
 // 消息区域组件模板 ref
@@ -183,6 +184,7 @@ const {
   onHandleRequest, handleJoinRequestAction,
   _cleanupNotifications,
   addSelfJoinRequest,
+  loadJoinRequestsHistory,
 } = useNotifications({ loadFriends, loadGroups, groups, activeView, chatTarget, mobileView, toast });
 
 const {
@@ -194,7 +196,7 @@ const {
   handlePanelSearch, handlePanelGroupSearch, handleAddFriend,
   handleCreateGroup, handleJoinGroup, handleSendMessageToGroup: _sendMessageToGroup,
   _cleanupSidePanel,
-} = useSidePanel({ toast, sentRequests, loadGroups, onJoinRequestSent: addSelfJoinRequest });
+} = useSidePanel({ toast, sentRequests, loadGroups, onJoinRequestSent: handleJoinRequestSent });
 
 const {
   profileUser, profileContext, profileLoading,
@@ -217,6 +219,24 @@ function openFriendNotifications() {
 function openGroupNotifications() {
   notificationTab.value = 'group';
   // 直接设置 activeView，不走 openNotifications()（群聊通知不需要加载好友申请数据）
+  activeView.value = 'notifications-group';
+  chatTarget.value = null;
+  mobileView.value = 'chat';
+  // 补充加载 REST 历史数据（入群申请 + 群通知），弥补实时 WS 推送的不足
+  loadJoinRequestsHistory();
+  loadGroupNotificationsHistory();
+}
+
+/**
+ * 用户发出入群申请后的回调
+ * 记录申请到通知列表 + 自动打开群聊通知面板让用户看到自己的申请
+ * @param {Object} data - { groupId, groupName }
+ */
+function handleJoinRequestSent(data) {
+  console.log('[Chat] 入群申请已发送，记录到通知列表:', data);
+  addSelfJoinRequest(data);
+  // 自动切到群聊通知面板，让用户看到自己刚发出的申请
+  notificationTab.value = 'group';
   activeView.value = 'notifications-group';
   chatTarget.value = null;
   mobileView.value = 'chat';

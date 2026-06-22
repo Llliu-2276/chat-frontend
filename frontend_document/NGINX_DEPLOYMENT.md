@@ -250,7 +250,7 @@ Get-Content "C:\nginx-1.30.2\logs\access.log" -Wait -Tail 5
    → 确认 dist/ 目录已生成
 
 ③ 启动 Nginx
-   Start-Process -FilePath ".\nginx.exe" -WindowStyle Hidden
+   Start-Process -FilePath "C:\nginx-1.30.2\nginx.exe" -WindowStyle Hidden
   验证 Nginx 运行中
    Get-Process nginx | Select-Object Id, ProcessName                   ← 确认进程存在
 

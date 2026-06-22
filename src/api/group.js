@@ -109,16 +109,17 @@ export function searchGroups(params) {
 
 /**
  * 加入群聊（发送加群申请）
+ * 后端 v2.1+ 为审批制：message 作为 query 参数通过 URL 传递
  * @param {number} groupId - 群组ID
- * @param {Object} [data] - 可选请求体
- * @param {string} [data.message] - 申请留言
+ * @param {Object} [data] - 可选参数
+ * @param {string} [data.message] - 申请留言（最大200字符）
  * @returns {Promise} 返回加入结果（成功码 201）
  */
 export function joinGroup(groupId, data = {}) {
   return request({
     url: `/group/join/${groupId}`,
     method: 'POST',
-    data,
+    params: data,
   });
 }
 
@@ -133,5 +134,33 @@ export function handleJoinRequest(groupId, data) {
     url: `/group/${groupId}/join-request/${data.requestId}/handle`,
     method: 'POST',
     data: { requestId: data.requestId, accept: data.accept },
+  });
+}
+
+/**
+ * 查询入群申请列表（群主视角 — 后端 v2.1）
+ * @param {number} groupId - 群组ID
+ * @returns {Promise} 返回待处理的入群申请列表
+ */
+export function getJoinRequests(groupId) {
+  return request({
+    url: `/group/${groupId}/join-requests`,
+    method: 'GET',
+  });
+}
+
+/**
+ * 查询群聊通知历史（后端 v2.0+）
+ * @param {number} groupId - 群组ID
+ * @param {Object} [params] - 可选参数
+ * @param {number} [params.page=1] - 页码
+ * @param {number} [params.size=20] - 每页数量
+ * @returns {Promise} 返回分页的群通知列表（成员加入/退出、群主转让等）
+ */
+export function getGroupNotifications(groupId, params) {
+  return request({
+    url: `/group/${groupId}/notifications`,
+    method: 'GET',
+    params,
   });
 }

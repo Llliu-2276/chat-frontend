@@ -10,7 +10,7 @@ import {
   getReceivedRequests,
   getSentRequests,
 } from '@/api/friend';
-import { handleJoinRequest } from '@/api/group';
+import { handleJoinRequest, getJoinRequests } from '@/api/group';
 import { wsManager } from '@/utils/websocket';
 
 /**
@@ -162,6 +162,48 @@ export function useNotifications({ loadFriends, loadGroups, groups, activeView, 
     }
   }
 
+  /**
+   * 从后端 REST 加载入群申请历史（群主视角）
+   * 遍历当前用户拥有的群，拉取每群的待处理入群申请，合并到 joinGroupRequests
+   * 已存在于列表中的申请（通过 requestId 去重）不会重复添加
+   */
+  async function loadJoinRequestsHistory() {
+    const ownedGroups = groups.value?.filter(g => g.isOwner) || [];
+    if (ownedGroups.length === 0) {
+      console.log('[通知] 没有管理的群，跳过入群申请历史加载');
+      return;
+    }
+    console.log('[通知] 为', ownedGroups.length, '个管理的群加载入群申请历史');
+    for (const g of ownedGroups) {
+      try {
+        const res = await getJoinRequests(g.groupId);
+        if (res.code === 200 && res.data) {
+          const list = Array.isArray(res.data) ? res.data : (res.data.content || []);
+          for (const req of list) {
+            // 去重：已存在于 joinGroupRequests 中则跳过
+            const exists = joinGroupRequests.value.some(r => r.requestId === req.requestId);
+            if (exists) continue;
+            // 只展示待处理的申请
+            if (req.status !== 0) continue;
+            joinGroupRequests.value.push({
+              _key: `join-req-${req.requestId}`,
+              requestId: req.requestId,
+              groupId: g.groupId,
+              groupName: g.groupName,
+              senderId: req.senderId,
+              senderName: req.senderName,
+              sendTime: req.createTime || req.sendTime || new Date().toISOString(),
+              status: req.status,
+            });
+          }
+          console.log('[通知] 群「' + g.groupName + '」加载', list.filter(r => r.status === 0).length, '条待处理入群申请');
+        }
+      } catch (e) {
+        console.error('[通知] 加载群「' + g.groupName + '」入群申请失败:', e);
+      }
+    }
+  }
+
   // ==================== WebSocket 事件处理 ====================
   /**
    * 处理 WebSocket 好友申请通知
@@ -204,11 +246,15 @@ export function useNotifications({ loadFriends, loadGroups, groups, activeView, 
    * 注意：WS 消息不包含 groupName，需从 groups 列表中查找
    */
   function handleWsJoinGroupRequest(msg) {
+    console.log('[通知] 收到 WS JOIN_GROUP_REQUEST:', JSON.stringify(msg));
     const { groupId, senderId, senderName, requestId, sendTime, content } = msg;
 
     // 去重
     const exists = joinGroupRequests.value.some(r => r.requestId === requestId);
-    if (exists) return;
+    if (exists) {
+      console.log('[通知] JOIN_GROUP_REQUEST 重复，跳过 requestId=', requestId);
+      return;
+    }
 
     // 从 groups 列表中查找群名，降级使用 content 字段
     const group = groups.value?.find(g => g.groupId === groupId);
@@ -239,6 +285,7 @@ export function useNotifications({ loadFriends, loadGroups, groups, activeView, 
    * @param {Object} data - { groupId, groupName, requestId }
    */
   function addSelfJoinRequest(data) {
+    console.log('[通知] addSelfJoinRequest 添加自己发出的入群申请:', JSON.stringify(data));
     joinGroupRequests.value.unshift({
       _key: `self-join-${Date.now()}`,
       requestId: data.requestId || 0,
@@ -312,6 +359,7 @@ export function useNotifications({ loadFriends, loadGroups, groups, activeView, 
     handleJoinRequestAction,
     addSelfJoinRequest,
     loadPendingCount,
+    loadJoinRequestsHistory,
     // 清理（供 Chat.vue 的 onBeforeUnmount 调用）
     _cleanupNotifications() {
       wsManager.off('FRIEND_REQUEST', _wsFriendRequest);

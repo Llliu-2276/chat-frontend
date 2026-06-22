@@ -35,6 +35,8 @@
  * 注册响应
  * @typedef {Object} UserRegisterResponse
  * @property {number} userId - 新创建的用户ID
+ * @property {string} userAccount - 系统自动生成的8位数字账号
+ * @property {string} userName - 用户名
  */
 
 /**
@@ -252,6 +254,29 @@
  * @property {string} userAccount - 用户账号
  * @property {boolean} isOwner - 是否为群主
  * @property {string} joinDate - 加入日期 (YYYY-MM-DD)
+ */
+
+/**
+ * WebSocket 群聊解散通知
+ * @typedef {Object} WsGroupDisbanded
+ * @property {'GROUP_DISBANDED'} type - 消息类型
+ * @property {number} groupId - 群组ID
+ * @property {number} senderId - 群主ID
+ * @property {string} senderName - 群主用户名
+ * @property {string} content - 通知文本（如 "xxx 已被群主解散"）
+ * @property {string} sendTime - 解散时间
+ */
+
+/**
+ * WebSocket 群主转让通知
+ * @typedef {Object} WsGroupOwnerTransferred
+ * @property {'GROUP_OWNER_TRANSFERRED'} type - 消息类型
+ * @property {number} groupId - 群组ID
+ * @property {number} senderId - 旧群主ID
+ * @property {string} senderName - 旧群主用户名
+ * @property {number} targetUserId - 新群主ID
+ * @property {string} content - 通知文本（如 "xxx 成为新群主"）
+ * @property {string} sendTime - 转让时间
  */
 
 // 导出空对象以支持 import

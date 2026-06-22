@@ -13,7 +13,7 @@
     <template v-else>
       <template v-for="item in allGroupItemsWithDividers" :key="item._divider ? item.key : item._key">
         <div v-if="item._divider" class="time-divider"><span>{{ item.label }}</span></div>
-        <!-- 成员变动通知 -->
+        <!-- 成员变动 / 群解散 / 群主转让 通知 -->
         <div v-else-if="item._type === 'member-change'" class="message-row is-other">
           <div class="bubble-avatar avatar avatar-sm clickable"
                :style="{ background: '#9df3c4', color: '#333' }"
@@ -25,8 +25,13 @@
             <span class="bubble-sender-name">{{ item.senderName }}</span>
             <div class="bubble other-bubble group-notif-bubble">
               <div>
-                <span class="group-notif-action">{{ item.type === 'GROUP_MEMBER_JOIN' ? '加入了' : '退出了' }}</span>
-                <span class="group-notif-group-name">「{{ item.groupName }}」</span>
+                <template v-if="item.type === 'GROUP_DISBANDED' || item.type === 'GROUP_OWNER_TRANSFERRED'">
+                  <span>{{ item.content || item.groupName }}</span>
+                </template>
+                <template v-else>
+                  <span class="group-notif-action">{{ item.type === 'GROUP_MEMBER_JOIN' ? '加入了' : '退出了' }}</span>
+                  <span class="group-notif-group-name">「{{ item.groupName }}」</span>
+                </template>
               </div>
               <div class="bubble-footer">
                 <span class="bubble-time">{{ formatGroupNotifTime(item.sendTime) }}</span>

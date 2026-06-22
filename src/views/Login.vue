@@ -152,6 +152,7 @@
  * 包含登录和注册表单，支持可拖动遮罩切换
  */
 import { ref, inject } from 'vue';
+import { ElMessageBox } from 'element-plus';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import { useDragMask } from '@/composables/useDragMask';
@@ -281,13 +282,63 @@ async function handleRegister() {
     });
 
     if (result.success) {
-      // 显示成功提示
-      toast.success('注册成功！请登录');
+      // 从后端响应中提取注册信息（后端 v2.6+ 返回 userAccount，旧版仅返回 userId）
+      const userAccount = result.data?.userAccount || '';
+      const userName = result.data?.userName || registerForm.value.userName;
+      const password = registerForm.value.password;
+      console.log('[注册成功] 后端返回:', JSON.stringify(result.data));
+
+      // 后端未升级时的降级提示
+      if (!userAccount) {
+        toast.warning('后端尚未返回账号信息，请联系管理员升级后端到 v2.6+');
+      }
+
+      // 弹出注册成功卡片，展示系统生成的账号
+      try {
+        await ElMessageBox.alert(
+          `<div class="register-success-card">
+            <div class="register-success-icon">🎉</div>
+            <div class="register-success-title">注册成功</div>
+            <div class="register-success-info">
+              <div class="register-success-row">
+                <span class="register-success-label">账号</span>
+                <span class="register-success-value account-value">${userAccount}</span>
+              </div>
+              <div class="register-success-row">
+                <span class="register-success-label">用户名</span>
+                <span class="register-success-value">${userName}</span>
+              </div>
+              <div class="register-success-row">
+                <span class="register-success-label">密码</span>
+                <span class="register-success-value">${password}</span>
+              </div>
+            </div>
+            <div class="register-success-warning">
+              <span>⚠️ 请牢记账号和密码，账号是登录的唯一凭证</span>
+            </div>
+          </div>`,
+          '注册成功',
+          {
+            confirmButtonText: '我知道了，去登录',
+            dangerouslyUseHTMLString: true,
+            customClass: 'register-success-dialog',
+            closeOnClickModal: false,
+            closeOnPressEscape: false,
+            showClose: false,
+          }
+        );
+      } catch {
+        // 极端情况（弹窗渲染失败），静默降级
+      }
+
       // 清空注册表单
       registerForm.value = { userName: '', password: '', confirmPassword: '' };
+      // 自动填入账号到登录表单，方便用户直接登录
+      loginForm.value.userAccount = userAccount;
+      loginForm.value.password = '';
 
-      // 延迟500ms后滑动遮罩到登录区（maskPosition=0 遮挡注册表单，显示登录表单）
-      setTimeout(() => slideTo(0), 500);
+      // 滑动遮罩到登录区（maskPosition=0 遮挡注册表单，显示登录表单）
+      setTimeout(() => slideTo(0), 300);
     } else {
       toast.error(result.message || '注册失败，请重试');
     }
@@ -662,5 +713,131 @@ async function handleRegister() {
 /* 从右侧进入（向左拖动时，新文字从右顶替旧文字） */
 .text-item.enter-from-right:not(.active) {
   transform: translate(-50%, -50%) translateX(100px);
+}
+</style>
+
+<!-- 注册成功弹窗样式（unscoped，ElMessageBox 渲染在 body 下） -->
+<style>
+.register-success-dialog {
+  border-radius: 16px !important;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.45) !important;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.06) !important;
+}
+
+.register-success-dialog .el-message-box__header {
+  padding: 22px 24px 12px;
+  border-bottom: none;
+}
+
+.register-success-dialog .el-message-box__title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #333;
+}
+
+.register-success-dialog .el-message-box__content {
+  padding: 0 24px 16px;
+}
+
+.register-success-dialog .el-message-box__btns {
+  padding: 12px 24px 20px;
+}
+
+/* 注册成功卡片 */
+.register-success-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 0;
+  height: 100%;
+}
+
+.register-success-icon {
+  font-size: 48px;
+  line-height: 1;
+}
+
+.register-success-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #11998e;
+  letter-spacing: 0.5px;
+}
+
+.register-success-info {
+  width: 100%;
+  max-width: 360px;
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: 12px;
+  padding: 4px 0;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+}
+
+.register-success-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 10px 18px;
+}
+
+.register-success-row:not(:last-child) {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.register-success-label {
+  font-size: 13px;
+  color: #999;
+  flex-shrink: 0;
+  min-width: 40px;
+  text-align: right;
+}
+
+.register-success-value {
+  font-size: 15px;
+  color: #333;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.account-value {
+  font-size: 20px;
+  letter-spacing: 2px;
+  color: #11998e;
+}
+
+.register-success-warning {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #e6a23c;
+  text-align: center;
+  padding: 4px 8px;
+}
+
+/* 按钮：对齐项目弹窗按钮视觉规范 */
+.register-success-dialog .el-button--primary {
+  background: rgba(56, 239, 125, 0.22);
+  color: #333;
+  border: 1.5px solid rgba(56, 239, 125, 0.45);
+  border-radius: 8px;
+  padding: 10px 28px;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.register-success-dialog .el-button--primary:hover {
+  background: rgba(56, 239, 125, 0.35);
+  box-shadow: 0 2px 8px rgba(17, 153, 142, 0.2);
+  transform: translateY(-1px);
 }
 </style>

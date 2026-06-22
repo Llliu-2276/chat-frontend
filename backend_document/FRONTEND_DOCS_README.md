@@ -35,6 +35,8 @@
 | **前端开发者文档中心** | FRONTEND_DOCS_README.md | 文档导航 | 所有人 |
 | **快速参考手册** | QUICK_REFERENCE.md | 快速查阅接口 | 前端开发日常使用 |
 | **完整API文档** | API_DOCUMENTATION.md | 详细接口说明 | 前端开发深入学习 |
+| **WebSocket 对接文档** | WEBSOCKET_UPGRADE.md | 实时通信指南 | 前端开发 |
+| **数据库文档** | chat数据库文档.md | 数据表结构 | 全栈开发 |
 | **错误码说明** | ErrorCode.md | 错误码参考 | 前后端开发 |
 
 ---
@@ -59,8 +61,8 @@
 - Vue/React如何配置？ → [完整API文档 - 前端配置示例](API_DOCUMENTATION.md#102-前端配置示例)
 
 #### 🛠️ 关于调试
-- 如何测试接口？ → [测试指南](TEST_GUIDE_USER_INFO.md)
-- 用什么工具调试？ → [完整API文档 - 测试工具推荐](API_DOCUMENTATION.md#11-测试工具推荐)
+- 如何测试接口？ → [完整API文档 - 测试工具推荐](API_DOCUMENTATION.md#11-测试工具推荐)
+- 用什么工具调试？ → [完整API文档 - 测试工具推荐](API_DOCUMENTATION.md#11-测试工具推荐) 或访问 Swagger UI：`http://localhost:8080/swagger-ui/index.html`
 - 常见问题？ → [完整API文档 - FAQ](API_DOCUMENTATION.md#12-常见问题faq)
 
 ---
@@ -81,7 +83,7 @@
 
 ### 计划中功能模块
 
-后续可扩展：文件/图片上传、Swagger 集成、正在输入状态等（详见 TODO_NEXT.md）
+后续可扩展：文件/图片上传、正在输入状态等
 
 ---
 
@@ -176,6 +178,7 @@
 | v2.3 | 2026-06-18 | 补充Javadoc(17个类)和日志(14处)；修复GroupJoinRequest.status列类型TINYINT→INT；group_join_request表补录入数据库文档 |
 | v2.4 | 2026-06-21 | JOIN_GROUP_REQUEST纳入MessageType枚举；新增ChatMessage.joinGroupRequest()工厂方法；POST /join/{groupId}支持?message=可选留言；WebSocket消息类型文档补齐 |
 | v2.5 | 2026-06-21 | 新增编辑群聊信息(PUT)；新增GROUP_DISBANDED消息类型(区分群解散/退出)；集成Swagger(springdoc-openapi) |
+| v2.6 | 2026-06-22 | 修复Swagger 401拦截；文档与在线文档对齐(汇总表补录14个接口、删除1个未实现、新增拉黑模块表、WebSocket类型补全) |
 
 ---
 
@@ -191,4 +194,4 @@
 
 ---
 
-**文档中心 v1.9** | 最后更新：2026-06-17
+**文档中心 v2.6** | 最后更新：2026-06-22

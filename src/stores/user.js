@@ -69,7 +69,7 @@ export const useUserStore = defineStore('user', () => {
   async function register(registerData) {
     try {
       const response = await registerApi(registerData);
-      console.log('注册成功，用户ID:', response.data.userId);
+      console.log('注册成功，用户ID:', response.data.userId, '账号:', response.data.userAccount);
       return { success: true, data: response.data };
     } catch (error) {
       console.error('注册失败:', error);

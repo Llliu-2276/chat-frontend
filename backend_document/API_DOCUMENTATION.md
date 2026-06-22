@@ -1,7 +1,7 @@
 # 📘 ChatBackend 前后端对接文档
 
-> **文档版本**: v2.5  
-> **更新日期**: 2026-06-21  
+> **文档版本**: v2.6  
+> **更新日期**: 2026-06-22  
 > **适用对象**: 前端开发工程师  
 > **后端技术栈**: Spring Boot 4.0.2 + JWT + Redis + MySQL
 
@@ -36,9 +36,11 @@
 - ✅ 支持用户资料的完整管理
 - ✅ 实现实时在线状态追踪（心跳机制）
 - ✅ 提供用户搜索和发现功能
-- ✅ 实现好友系统（好友列表、消息管理、聊天记录）
-- ✅ WebSocket 实时通信（消息推送、在线状态通知）
-- 🔄 规划群组系统
+- ✅ 实现好友系统（好友列表、消息管理、聊天记录、撤回消息、消息搜索）
+- ✅ WebSocket 实时通信（消息推送、在线状态通知、已读回执、消息撤回）
+- ✅ 群组系统（群聊CRUD、成员管理、群主转让、踢人、入群审批、群通知）
+- ✅ 用户拉黑系统
+- ✅ 接口限流
 
 ### 1.3 基础信息
 
@@ -53,6 +55,8 @@
 | **缓存** | Redis 6.x |
 | **认证方式** | JWT (JSON Web Token) |
 | **跨域配置** | 已配置CORS，支持跨域请求 |
+| **Swagger UI** | [http://localhost:8080/swagger-ui/index.html](http://localhost:8080/swagger-ui/index.html) |
+| **在线API查询** | [Swagger UI - auth-controller](http://localhost:8080/swagger-ui/index.html#/auth-controller/userRegister) |
 
 ---
 
@@ -147,6 +151,8 @@
 - ✅ 好友申请双向确认机制（发起/处理/查询/取消）
 - ✅ 好友申请 WebSocket 实时通知
 - ✅ 删除好友（含聊天记录清理）
+- ✅ 撤回私聊消息（2分钟内）
+- ✅ 搜索私聊消息
 
 #### 📦 模块6：群组系统
 
@@ -162,7 +168,14 @@
 - ✅ 群聊天记录查询（分页，含发送者信息）
 - ✅ 群成员列表查询
 - ✅ WebSocket 群聊消息实时广播
-- ✅ 群成员变动 WebSocket 实时通知（成员退出/群解散）
+- ✅ 群成员变动 WebSocket 实时通知（加入/退出/踢出/群解散）
+- ✅ 群主转让
+- ✅ 邀请好友入群
+- ✅ 加入群聊审批制（群主审批入群申请）
+- ✅ 群聊通知历史（离线可查）
+- ✅ 撤回群聊消息（2分钟内）
+- ✅ 搜索群聊消息
+- ✅ 编辑群聊信息
 
 **前端配合要点**：
 - 好友列表页面展示在线状态
@@ -238,7 +251,9 @@ POST /api/auth/register
   "code": 201,
   "message": "注册成功",
   "data": {
-    "userId": 2
+    "userId": 2,
+    "userAccount": "87654321",
+    "userName": "新用户"
   }
 }
 ```
@@ -249,6 +264,7 @@ POST /api/auth/register
 - 用户名最多16个字符
 - 密码最多32个字符
 - 系统自动生成8位数字账号
+- **注册成功后前端应展示系统生成的账号（`userAccount`），引导用户记录或直接用于登录**
 
 ---
 
@@ -527,7 +543,7 @@ Authorization: Bearer {token}
 }
 ```
 
-**认证要求**：✅ 需要Token
+**认证要求**：❌ 不需要Token（公开接口）
 
 **用途**：显示系统在线人数
 
@@ -1764,7 +1780,7 @@ Authorization: Bearer {token}
 
 ---
 
-#### 3.6.6 获取群聊天记录
+#### 3.6.7 获取群聊天记录
 
 ```
 GET /api/group/history/{groupId}
@@ -1831,7 +1847,7 @@ GET /api/group/history/1?page=1&size=20
 
 ---
 
-#### 3.6.7 获取群成员列表
+#### 3.6.8 获取群成员列表
 
 ```
 GET /api/group/members/{groupId}
@@ -1882,7 +1898,7 @@ Authorization: Bearer {token}
 
 ---
 
-#### 3.6.8 搜索群聊
+#### 3.6.9 搜索群聊
 
 **接口**：`GET /api/group/search?keyword={关键词}&page={页码}&size={每页大小}`
 
@@ -1929,7 +1945,7 @@ Authorization: Bearer {token}
 
 ---
 
-#### 3.6.9 加入群聊
+#### 3.6.10 加入群聊
 
 **接口**：`POST /api/group/join/{groupId}`
 
@@ -1976,7 +1992,7 @@ Authorization: Bearer {token}
 
 ---
 
-#### 3.6.10 标记群聊消息已读
+#### 3.6.11 标记群聊消息已读
 
 **接口**：`POST /api/group/{groupId}/read/{recordId}`
 
@@ -2005,7 +2021,7 @@ Authorization: Bearer {token}
 
 ---
 
-#### 3.6.11 获取群未读消息数
+#### 3.6.12 获取群未读消息数
 
 **接口**：`GET /api/group/{groupId}/unread-count`
 
@@ -2030,7 +2046,7 @@ Authorization: Bearer {token}
 |------|---------|------|
 | 403 | 您不是该群聊的成员 | 非群成员无权查询 |
 
-### 3.6.12 踢出群成员
+### 3.6.13 踢出群成员
 
 ```
 DELETE /api/group/{groupId}/member/{targetUserId}
@@ -2044,7 +2060,7 @@ DELETE /api/group/{groupId}/member/{targetUserId}
 **响应**：`{"code":200, "message":"已将该成员移出群聊"}`
 **认证**：✅（仅群主）
 
-### 3.6.13 转让群主
+### 3.6.14 转让群主
 
 ```
 POST /api/group/{groupId}/transfer/{targetUserId}
@@ -2058,7 +2074,7 @@ POST /api/group/{groupId}/transfer/{targetUserId}
 **响应**：`{"code":200, "message":"群主转让成功"}`
 **认证**：✅（仅群主）
 
-### 3.6.14 邀请好友入群
+### 3.6.15 邀请好友入群
 
 ```
 POST /api/group/{groupId}/invite/{inviteeId}
@@ -2072,7 +2088,7 @@ POST /api/group/{groupId}/invite/{inviteeId}
 **响应**：`{"code":201, "message":"邀请好友入群成功", "data":{群聊信息VO}}`
 **认证**：✅（邀请人须是群成员且被邀请人须是好友）
 
-### 3.6.15 申请加入群聊（需审批）
+### 3.6.16 申请加入群聊（需审批）
 
 ```
 POST /api/group/join/{groupId}?message=我想加入这个群
@@ -2088,7 +2104,7 @@ POST /api/group/join/{groupId}?message=我想加入这个群
 **响应**：`{"code":201, "message":"入群申请已发送，等待群主审批"}`
 **流程**：用户申请 → 群主收到 WebSocket `JOIN_GROUP_REQUEST` 推送 → 群主审批
 
-### 3.6.16 查看入群申请（群主）
+### 3.6.17 查看入群申请（群主）
 
 ```
 GET /api/group/{groupId}/join-requests?page=1&size=20
@@ -2097,7 +2113,7 @@ GET /api/group/{groupId}/join-requests?page=1&size=20
 **响应**：分页返回待处理申请，每项含 applicantId/Name、createTime  
 **认证**：✅（仅群主）
 
-### 3.6.17 处理入群申请
+### 3.6.18 处理入群申请
 
 ```
 POST /api/group/{groupId}/join-request/{requestId}/handle
@@ -2107,7 +2123,7 @@ Body: { "requestId": 1, "accept": true }
 **响应**：`{"code":200, "message":"已同意入群申请"}` 或 `"...已拒绝入群申请"`  
 **认证**：✅（仅群主）
 
-### 3.6.18 撤回群聊消息
+### 3.6.19 撤回群聊消息
 
 ```
 POST /api/group/{groupId}/message/{recordId}/recall
@@ -2121,7 +2137,7 @@ POST /api/group/{groupId}/message/{recordId}/recall
 **响应**：`{"code":200, "message":"消息已撤回"}`
 **限制**：仅发送者可撤回，2分钟内
 
-### 3.6.19 搜索群聊消息
+### 3.6.20 搜索群聊消息
 
 ```
 GET /api/group/history/{groupId}/search?keyword=你好&page=1&size=20
@@ -2130,7 +2146,7 @@ GET /api/group/history/{groupId}/search?keyword=你好&page=1&size=20
 **参数**：keyword（必需，≤50字符）、page、size  
 **响应**：分页返回含关键词的群聊消息
 
-### 3.6.20 群聊通知列表
+### 3.6.21 群聊通知列表
 
 ```
 GET /api/group/{groupId}/notifications?page=1&size=20
@@ -2216,15 +2232,25 @@ GET /api/user/blocked-list
 
 | 接口路径 | 方法 | 功能 | 状态 |
 |---------|------|------|------|
-| `GET /api/friends/list` | GET | 获取好友列表 | ✅ 已实现 |
+| `GET /api/friends/list` | GET | 获取好友列表（分页） | ✅ 已实现 |
 | `GET /api/friends/messages/unread` | GET | 获取未读消息 | ✅ 已实现 |
-| `GET /api/friends/chat-history/{friendId}` | GET | 获取聊天记录 | ✅ 已实现 |
+| `GET /api/friends/chat-history/{friendId}` | GET | 获取聊天记录（分页） | ✅ 已实现 |
 | `POST /api/friends/send-message` | POST | 发送好友消息 | ✅ 已实现 |
 | `POST /api/friends/request` | POST | 发起好友申请 | ✅ 已实现 |
 | `POST /api/friends/request/handle` | POST | 处理好友申请（同意/拒绝） | ✅ 已实现 |
 | `GET /api/friends/request/received` | GET | 查询收到的好友申请 | ✅ 已实现 |
 | `GET /api/friends/request/sent` | GET | 查询发出的好友申请 | ✅ 已实现 |
 | `DELETE /api/friends/remove/{friendId}` | DELETE | 删除好友（含聊天记录清理） | ✅ 已实现 |
+| `POST /api/friends/message/{recordId}/recall` | POST | 撤回私聊消息（2分钟内） | ✅ 已实现 |
+| `GET /api/friends/chat-history/{friendId}/search` | GET | 搜索私聊消息 | ✅ 已实现 |
+
+### 4.6 用户拉黑接口
+
+| 接口路径 | 方法 | 功能 | 状态 |
+|---------|------|------|------|
+| `POST /api/user/block` | POST | 拉黑用户 | ✅ 已实现 |
+| `DELETE /api/user/block/{blockedId}` | DELETE | 取消拉黑 | ✅ 已实现 |
+| `GET /api/user/blocked-list` | GET | 获取黑名单列表 | ✅ 已实现 |
 
 ### 4.7 群组系统接口（续）
 
@@ -2238,7 +2264,18 @@ GET /api/user/blocked-list
 | `POST /api/group/message` | POST | 发送群聊消息 | ✅ 已实现 |
 | `GET /api/group/history/{groupId}` | GET | 获取群聊天记录（分页） | ✅ 已实现 |
 | `GET /api/group/members/{groupId}` | GET | 获取群成员列表 | ✅ 已实现 |
-| `GET /api/user/groups/{userId}` | GET | 获取指定用户群组列表 | ⏳ 规划中 |
+| `GET /api/group/search` | GET | 搜索群聊 | ✅ 已实现 |
+| `POST /api/group/join/{groupId}` | POST | 申请加入群聊（需审批） | ✅ 已实现 |
+| `POST /api/group/{groupId}/read/{recordId}` | POST | 标记群消息已读 | ✅ 已实现 |
+| `GET /api/group/{groupId}/unread-count` | GET | 群未读消息数 | ✅ 已实现 |
+| `DELETE /api/group/{groupId}/member/{targetUserId}` | DELETE | 踢出群成员（仅群主） | ✅ 已实现 |
+| `POST /api/group/{groupId}/transfer/{targetUserId}` | POST | 转让群主 | ✅ 已实现 |
+| `POST /api/group/{groupId}/invite/{inviteeId}` | POST | 邀请好友入群 | ✅ 已实现 |
+| `GET /api/group/{groupId}/join-requests` | GET | 查看入群申请（仅群主） | ✅ 已实现 |
+| `POST /api/group/{groupId}/join-request/{requestId}/handle` | POST | 处理入群申请 | ✅ 已实现 |
+| `POST /api/group/{groupId}/message/{recordId}/recall` | POST | 撤回群聊消息（2分钟内） | ✅ 已实现 |
+| `GET /api/group/history/{groupId}/search` | GET | 搜索群聊消息 | ✅ 已实现 |
+| `GET /api/group/{groupId}/notifications` | GET | 群聊通知列表 | ✅ 已实现 |
 
 ### 4.8 用户档案接口
 
@@ -2262,6 +2299,10 @@ GET /api/user/blocked-list
 - ✅ 群聊消息实时推送（`GROUP_MESSAGE`）
 - ✅ 群成员变动通知（`GROUP_MEMBER_JOIN` / `GROUP_MEMBER_LEAVE`）
 - ✅ 群聊消息已读回执（`GROUP_READ_RECEIPT` — 客户端上报已读位置）
+- ✅ 消息撤回通知（`MESSAGE_RECALL`）
+- ✅ 群主转让通知（`GROUP_OWNER_TRANSFERRED`）
+- ✅ 群聊解散通知（`GROUP_DISBANDED`）
+- ✅ 入群申请通知（`JOIN_GROUP_REQUEST` — 推送给群主）
 
 **前端配合要点**：
 - 登录成功后建立 WebSocket 连接（`ws://localhost:8080/ws/chat?token=xxx`）
@@ -2542,6 +2583,8 @@ interface UserLoginWithTokenVO extends UserInfoVO {
 ```typescript
 interface UserRegisterVO {
   userId: number;           // 用户ID
+  userAccount: string;      // 系统自动生成的8位数字账号
+  userName: string;         // 用户名
 }
 ```
 
@@ -2996,7 +3039,20 @@ export default apiCall;
 
 ## 11. 测试工具推荐
 
-### 11.1 Postman
+### 11.1 Swagger UI（推荐）
+
+**在线API文档与测试工具**：
+
+访问地址：[http://localhost:8080/swagger-ui/index.html](http://localhost:8080/swagger-ui/index.html)
+
+- ✅ 自动生成：基于 springdoc-openapi，与代码实时同步
+- ✅ 在线测试：可直接在页面上输入参数并发送请求
+- ✅ 接口分组：按 Controller 分类（auth-controller、user-profile-controller、friend-controller、group-controller 等）
+- ✅ Schema 展示：自动展示 DTO/VO 的字段结构
+
+**认证配置**：在 Swagger UI 页面点击右上角 "Authorize" 按钮，输入 `Bearer {your_token}` 即可测试需要认证的接口。
+
+### 11.2 Postman
 
 **导入集合**：
 1. 创建新Collection：`ChatBackend API`
@@ -3004,7 +3060,7 @@ export default apiCall;
 3. 设置环境变量：`baseUrl = http://localhost:8080`
 4. 使用环境变量：`{{baseUrl}}/api/auth/login`
 
-### 11.2 Apifox/ApiPost
+### 11.3 Apifox/ApiPost
 
 国产API调试工具，支持：
 - ✅ 接口文档管理
@@ -3194,6 +3250,10 @@ async function safeApiCall(url, options) {
 | v2.0 | 2026-06-18 | 第二优先级功能：踢人出群、撤回消息(软删除2分钟)、群主转让、邀请好友入群、接口限流(429)、用户拉黑(blocked_user)、消息搜索；群聊消息补充WebSocket推送；新增chat_group_notification/blocked_user表 | 后端团队 |
 | v2.1 | 2026-06-18 | 加入群聊改为审批制（搜索入群需群主同意）；新增入群申请/审批接口、群通知列表接口；新增group_join_request表 | 后端团队 |
 | v2.2 | 2026-06-18 | 代码优化：登录失败返回401(原404)；ObjectMapper统一注入为Spring Bean；好友列表加分页(支持page/size)；移除handleFriendRequest冗余updateRequestStatus | 后端团队 |
+| v2.3 | 2026-06-18 | 补充Javadoc(17个类)和日志(14处)；修复GroupJoinRequest.status列类型；group_join_request表补录入数据库文档 | 后端团队 |
+| v2.4 | 2026-06-21 | JOIN_GROUP_REQUEST纳入MessageType枚举；ChatMessage.joinGroupRequest()工厂方法；POST /join/{groupId}支持message留言；WebSocket消息类型文档补齐 | 后端团队 |
+| v2.5 | 2026-06-21 | 编辑群聊信息(PUT /group/{groupId})；GROUP_DISBANDED消息类型区分群解散/退出；集成Swagger(springdoc-openapi) | 后端团队 |
+| v2.6 | 2026-06-22 | Swagger UI 401拦截修复(SecurityConfig+JwtAuthenticationFilter放行)；文档汇总表与在线文档对齐(补录14个接口、删除1个、新增拉黑模块表) | 后端团队 |
 
 ---
 

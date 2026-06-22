@@ -35,6 +35,7 @@ npm run build        # 生产构建 → dist/
 | [🧩 组件说明](frontend_document/COMPONENTS.md) | 所有组件的 Props、Events、Expose |
 | [🌐 API 调用规范](frontend_document/API_GUIDE.md) | 接口封装、环境变量、WebSocket 消息类型 |
 | [🗄 状态管理](frontend_document/STATE_MANAGEMENT.md) | Store 结构、心跳管理、登录流程 |
+| [📋 编码规范](frontend_document/CODE_STANDARDS.md) | 命名、组件/API/WS 规范、防御性检查清单 |
 | [🚀 部署手册](frontend_document/NGINX_DEPLOYMENT.md) | Nginx 配置、内网穿透、发布流程 |
 
 ### 后端文档

@@ -22,6 +22,7 @@
 | 申请结果通知 | 处理申请后实时推送 `FRIEND_REQUEST_RESULT` 给申请人 |
 | 消息撤回通知 | 用户撤回消息后推送 `MESSAGE_RECALL` 给接收者（私聊）或全体成员（群聊） |
 | 群主转让通知 | 群主转让后广播 `GROUP_OWNER_TRANSFERRED` 给全体成员 |
+| 群聊解散通知 | 群主解散群聊时广播 `GROUP_DISBANDED` 给全体成员 |
 | 入群申请通知 | 用户申请加入群聊时推送 `JOIN_GROUP_REQUEST` 给群主 |
 
 ### 与现有 REST 接口的关系
@@ -81,6 +82,7 @@ Token 从登录接口获取，放在 URL 查询参数中。
 { "type": "MESSAGE_RECALL", "senderId": 1, "senderName": "张三", "recordId": 105, "receiverId": 2, "groupId": null, "content": "消息已被撤回", "sendTime": "2026-06-18T12:00:00" }
 { "type": "GROUP_OWNER_TRANSFERRED", "groupId": 1, "senderId": 5, "senderName": "旧群主", "targetUserId": 3, "content": "李四 成为新群主", "sendTime": "2026-06-18T12:00:00" }
 { "type": "JOIN_GROUP_REQUEST", "senderId": 3, "senderName": "王五", "groupId": 1, "content": "申请加入群聊 xxx", "requestId": 1, "sendTime": "2026-06-18T12:00:00" }
+{ "type": "GROUP_DISBANDED", "groupId": 1, "senderId": 5, "senderName": "群主", "content": "技术交流群 已被群主解散", "sendTime": "2026-06-21T12:00:00" }
 { "type": "ERROR", "error": "错误信息" }
 ```
 

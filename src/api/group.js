@@ -110,12 +110,15 @@ export function searchGroups(params) {
 /**
  * 加入群聊（发送加群申请）
  * @param {number} groupId - 群组ID
+ * @param {Object} [data] - 可选请求体
+ * @param {string} [data.message] - 申请留言
  * @returns {Promise} 返回加入结果（成功码 201）
  */
-export function joinGroup(groupId) {
+export function joinGroup(groupId, data = {}) {
   return request({
     url: `/group/join/${groupId}`,
     method: 'POST',
+    data,
   });
 }
 

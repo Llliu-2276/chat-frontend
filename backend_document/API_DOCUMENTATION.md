@@ -1,7 +1,7 @@
 # 📘 ChatBackend 前后端对接文档
 
-> **文档版本**: v2.2  
-> **更新日期**: 2026-06-18  
+> **文档版本**: v2.5  
+> **更新日期**: 2026-06-21  
 > **适用对象**: 前端开发工程师  
 > **后端技术栈**: Spring Boot 4.0.2 + JWT + Redis + MySQL
 
@@ -1692,9 +1692,27 @@ async function dissolveOrLeaveGroup(groupId, isOwner) {
 }
 ```
 
+#### 3.6.5 Edit group information
+
+```
+PUT /api/group/{groupId}
+Body: { "groupName": "新群名称" }
+```
+
+**请求参数**：
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| groupId | Long | ✅ | 群组ID（路径） |
+| groupName | String | ✅ | 新群名称（≤16字符） |
+
+**响应**：`{"code":200, "message":"群聊信息更新成功", "data":{群聊信息VO}}`
+**认证要求**：✅（仅群主）
+**用途**：群设置页编辑群名称
+
 ---
 
-#### 3.6.5 发送群聊消息
+#### 3.6.6 发送群聊消息
 
 ```
 POST /api/group/message
@@ -2057,8 +2075,13 @@ POST /api/group/{groupId}/invite/{inviteeId}
 ### 3.6.15 申请加入群聊（需审批）
 
 ```
-POST /api/group/join/{groupId}
+POST /api/group/join/{groupId}?message=我想加入这个群
 ```
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| groupId | Long | ✅ | 群组ID（路径） |
+| message | String | ❌ | 申请留言（可选，最大200字符） |
 
 > ⚠️ **v2.1 变更**：加入群聊改为审批制，不再直接入群。好友邀请入群（3.6.14）不受影响，仍直接加入。
 
@@ -2207,6 +2230,7 @@ GET /api/user/blocked-list
 
 | 接口路径 | 方法 | 功能 | 状态 |
 |---------|------|------|------|
+| `PUT /api/group/{groupId}` | PUT | 编辑群聊信息（仅群主） | ✅ 已实现 |
 | `POST /api/group/create` | POST | 创建群组 | ✅ 已实现 |
 | `GET /api/group/list` | GET | 获取用户的群组列表 | ✅ 已实现 |
 | `GET /api/group/info/{groupId}` | GET | 获取群组详情（含成员列表） | ✅ 已实现 |

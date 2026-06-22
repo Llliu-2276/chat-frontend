@@ -101,6 +101,8 @@ const allGroupItems = computed(() => {
     items.push({ ...n, _type: 'member-change', _key: n._key, _sortTime: n.sendTime });
   }
   for (const r of props.joinGroupRequests) {
+    // 已处理（同意/拒绝）的申请不再显示
+    if (r.status !== 0) continue;
     items.push({ ...r, _type: 'join-request', _key: r._key, _sortTime: r.sendTime });
   }
   items.sort((a, b) => {

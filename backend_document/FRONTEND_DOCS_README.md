@@ -173,6 +173,9 @@
 | v2.0 | 2026-06-18 | 第二优先级功能：踢人出群、撤回消息(软删除)、群主转让、邀请好友入群、接口限流、用户拉黑、消息搜索；新增chat_group_notification/blocked_user表；群聊消息补充WebSocket实时推送 |
 | v2.1 | 2026-06-18 | 加入群聊改为审批制：搜索入群需群主同意；新增入群申请/审批接口、群通知列表接口；新增group_join_request表 |
 | v2.2 | 2026-06-18 | 代码优化：登录失败返回401(原404)；ObjectMapper统一为Spring Bean；好友列表加分页；移除handleFriendRequest冗余updateRequestStatus |
+| v2.3 | 2026-06-18 | 补充Javadoc(17个类)和日志(14处)；修复GroupJoinRequest.status列类型TINYINT→INT；group_join_request表补录入数据库文档 |
+| v2.4 | 2026-06-21 | JOIN_GROUP_REQUEST纳入MessageType枚举；新增ChatMessage.joinGroupRequest()工厂方法；POST /join/{groupId}支持?message=可选留言；WebSocket消息类型文档补齐 |
+| v2.5 | 2026-06-21 | 新增编辑群聊信息(PUT)；新增GROUP_DISBANDED消息类型(区分群解散/退出)；集成Swagger(springdoc-openapi) |
 
 ---
 

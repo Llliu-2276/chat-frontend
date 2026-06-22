@@ -40,17 +40,6 @@ export function useChatMessages(chatTarget, chatType, friends, messageAreaRef, u
   }
 
   /**
-   * 格式化时间为 HH:mm
-   * @param {string} t - 时间字符串
-   * @returns {string}
-   */
-  function formatTime(t) {
-    if (!t) return '';
-    const normalized = t.replace('T', ' ');
-    return normalized.length >= 16 ? normalized.slice(11, 16) : normalized;
-  }
-
-  /**
    * 更新好友列表中指定好友的最后一条消息
    * @param {number} friendId - 好友用户ID
    * @param {string} content - 消息内容
@@ -312,6 +301,5 @@ export function useChatMessages(chatTarget, chatType, friends, messageAreaRef, u
     handleScroll,
     // 工具函数
     formatLocalDateTime,
-    formatTime,
   };
 }

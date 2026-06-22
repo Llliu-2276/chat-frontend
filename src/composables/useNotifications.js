@@ -262,9 +262,11 @@ export function useNotifications({ loadFriends, loadGroups, groups, activeView, 
     try {
       const res = await handleJoinRequest(groupId, { requestId, accept });
       if (res.code === 200 || res.code === 201) {
-        const item = joinGroupRequests.value.find(r => r.requestId === requestId);
-        if (item) {
-          item.status = accept ? 1 : 2;
+        const idx = joinGroupRequests.value.findIndex(r => r.requestId === requestId);
+        if (idx !== -1) {
+          // 替换数组元素触发 Vue 响应式更新（直接修改属性不会触发 computed 重算）
+          const updated = { ...joinGroupRequests.value[idx], status: accept ? 1 : 2 };
+          joinGroupRequests.value.splice(idx, 1, updated);
         }
         toast.success(accept ? '已同意入群申请' : '已拒绝入群申请');
         // 刷新群聊列表（已弹 toast，静默刷新）

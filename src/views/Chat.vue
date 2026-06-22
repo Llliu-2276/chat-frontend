@@ -290,6 +290,7 @@ async function onSelectFriend(friend) {
 async function onSelectGroup(group) {
   _selectGroup(group);
   resetChat();
+  await loadChatHistory(false);
 }
 
 // ==================== 通知面板：加载更多（同时加载收到与发出） ====================
@@ -309,7 +310,7 @@ function handleWsAuthError(msg) {
 }
 
 // ==================== 生命周期 ====================
-let unreadTimer = null, friendListTimer = null;
+let unreadTimer = null, friendListTimer = null, groupListTimer = null;
 
 onMounted(async () => {
   // 注册 WS 认证错误处理
@@ -324,12 +325,14 @@ onMounted(async () => {
   // 后台轮询：静默失败，不弹 toast 打扰用户
   unreadTimer = setInterval(() => fetchUnreadMessages({ silent: true }), 30000);
   friendListTimer = setInterval(() => loadFriends({ silent: true }), 60000);
+  groupListTimer = setInterval(() => loadGroups({ silent: true }), 60000);
 });
 
 onBeforeUnmount(() => {
   wsManager.off('ERROR', handleWsAuthError);
   if (unreadTimer) clearInterval(unreadTimer);
   if (friendListTimer) clearInterval(friendListTimer);
+  if (groupListTimer) clearInterval(groupListTimer);
   _cleanupNotifications();
   _cleanupSidePanel();
 });

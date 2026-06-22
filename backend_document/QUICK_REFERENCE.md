@@ -77,7 +77,8 @@
 | 群聊天记录 | GET | `/api/group/history/{groupId}?page=1&size=20` | ✅ |
 | 群成员列表 | GET | `/api/group/members/{groupId}` | ✅ |
 | 搜索群聊 | GET | `/api/group/search?keyword=&page=&size=` | ✅ |
-| 加入群聊 | POST | `/api/group/join/{groupId}` | ✅ |
+| 编辑群聊信息 | PUT | `/api/group/{groupId}` | ✅ |
+| 加入群聊 | POST | `/api/group/join/{groupId}?message=`(可选) | ✅ |
 | 标记群消息已读 | POST | `/api/group/{groupId}/read/{recordId}` | ✅ |
 | 群未读消息数 | GET | `/api/group/{groupId}/unread-count` | ✅ |
 | 查看入群申请 | GET | `/api/group/{groupId}/join-requests` | ✅ |
@@ -122,6 +123,8 @@
 | `READ_RECEIPT` | S→C | 消息已读回执 |
 | `HEARTBEAT` | S→C | 心跳响应 |
 | `GROUP_READ_RECEIPT` | C→S | 群聊消息已读回执（字段：senderId, groupId, recordId） |
+| `JOIN_GROUP_REQUEST` | S→C | 入群申请通知（字段：senderId申请人, senderName, groupId, content, requestId, sendTime） |
+| `GROUP_DISBANDED` | S→C | 群聊解散通知（字段：groupId, senderId群主, senderName, content, sendTime） |
 | `MESSAGE_RECALL` | S→C | 消息撤回通知（字段：senderId, senderName, recordId, groupId/receiverId） |
 | `GROUP_OWNER_TRANSFERRED` | S→C | 群主转让通知（字段：groupId, senderId旧群主, targetUserId新群主） |
 | `ERROR` | S→C | 错误通知 |

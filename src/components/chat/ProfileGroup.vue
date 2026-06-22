@@ -96,7 +96,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
 import { ChatDotRound, Delete, Plus } from '@element-plus/icons-vue';
-import { getGroupMembers } from '@/api/group';
+import { getGroupInfo, getGroupMembers } from '@/api/group';
 
 defineOptions({ name: 'ProfileGroup' });
 
@@ -104,7 +104,7 @@ const props = defineProps({
   profileUser: { type: Object, default: null },
   isGroupMember: { type: Boolean, default: false },
 });
-defineEmits(['send-message-to', 'dissolve-or-leave-group', 'join-group']);
+const emit = defineEmits(['send-message-to', 'dissolve-or-leave-group', 'join-group']);
 
 // ==================== 成员列表 ====================
 const members = ref([]);
@@ -123,6 +123,25 @@ const sortedMembers = computed(() => {
 async function fetchMembers() {
   if (!props.isGroupMember || !props.profileUser?.groupId) return;
   loadingMembers.value = true;
+  try {
+    // 优先使用 getGroupInfo 获取实时群详情+成员列表
+    const infoRes = await getGroupInfo(props.profileUser.groupId);
+    if (infoRes.code === 200 && infoRes.data) {
+      // 提取成员列表（兼容数组和分页包装）
+      const memberList = Array.isArray(infoRes.data.members)
+        ? infoRes.data.members
+        : (infoRes.data.members?.content || null);
+      // 只有成功提取到非空成员列表才返回，否则降级到 getGroupMembers
+      if (memberList && memberList.length > 0) {
+        members.value = memberList;
+        loadingMembers.value = false;
+        return;
+      }
+    }
+  } catch (e) {
+    console.error('加载群详情失败，降级到成员列表接口:', e);
+  }
+  // 降级：单独请求成员列表
   try {
     const res = await getGroupMembers(props.profileUser.groupId);
     if (res.code === 200 && res.data) {

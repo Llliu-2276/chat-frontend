@@ -292,7 +292,7 @@ export function useSidePanel({ toast, sentRequests, loadGroups, onJoinRequestSen
       const message = (value || '').trim() || defaultMsg;
 
       joiningGroupIds.value.add(group.groupId);
-      const res = await joinGroup(group.groupId);
+      const res = await joinGroup(group.groupId, { message });
       if (res.code === 201) {
         toast.success(`已发送加群申请，等待群主「${group.ownerName || '审核'}」`);
         // 通知父组件记录自己发出的申请

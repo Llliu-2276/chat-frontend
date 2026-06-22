@@ -10,6 +10,28 @@ import { getFriendList, getUnreadMessages } from '@/api/friend';
 import { getGroupList } from '@/api/group';
 import { wsManager } from '@/utils/websocket';
 
+// ==================== 群聊未读持久化 ====================
+const GROUP_UNREAD_KEY = 'chat_group_unread';
+
+/** 从 localStorage 读取群聊未读计数 */
+function loadGroupUnreadCache() {
+  try {
+    const raw = localStorage.getItem(GROUP_UNREAD_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+/** 将群聊未读计数写入 localStorage */
+function saveGroupUnreadCache(groups) {
+  try {
+    const map = {};
+    for (const g of groups) {
+      if (g.unreadCount > 0) map[g.groupId] = g.unreadCount;
+    }
+    localStorage.setItem(GROUP_UNREAD_KEY, JSON.stringify(map));
+  } catch { /* 静默失败 */ }
+}
+
 /**
  * 好友列表管理
  * @param {Object} toast - Toast 通知对象
@@ -146,15 +168,24 @@ export function useFriendList(toast) {
       if (res.code === 200) {
         // 后端 v2.2+ 返回分页包装 { content: [...], ... }，v1.x 返回纯数组
         const list = Array.isArray(res.data) ? res.data : (res.data?.content || []);
+        // 读本地未读缓存，与后端数据合并
+        const unreadCache = loadGroupUnreadCache();
         groups.value = list.map(g => {
           const existing = groups.value.find(old => old.groupId === g.groupId);
+          const cachedUnread = unreadCache[g.groupId] || 0;
           return {
             ...g,
-            // 后端已返回这些字段（v1.9+），保留已有值作为降级
+            // 后端已返回这些字段（v1.9+），保留已有值作为降级，持久化兜底
             lastMessage: g.lastMessage || existing?.lastMessage || '',
             lastMessageTime: g.lastMessageTime || existing?.lastMessageTime || '',
-            unreadCount: g.unreadCount ?? existing?.unreadCount ?? 0,
+            unreadCount: g.unreadCount ?? existing?.unreadCount ?? cachedUnread,
           };
+        });
+        // 按最新消息时间降序排列
+        groups.value.sort((a, b) => {
+          const ta = a.lastMessageTime || a.createDate || '';
+          const tb = b.lastMessageTime || b.createDate || '';
+          return tb.localeCompare(ta);
         });
       } else if (!silent) {
         toast.error(res.message || '加载群聊列表失败，请刷新重试');
@@ -215,6 +246,7 @@ export function useFriendList(toast) {
     } else {
       group.unreadCount = (group.unreadCount || 0) + 1;
     }
+    saveGroupUnreadCache(groups.value);
   }
 
   /** 处理群成员加入/退出通知（存储通知 + 刷新群列表） */
@@ -262,11 +294,15 @@ export function useFriendList(toast) {
   });
 
   // ==================== 侦听器 ====================
-  // 切换到好友聊天时，清除该好友的未读计数
+  // 切换到聊天对象时，清除该对象的未读计数
   watch(chatTarget, () => {
     if (chatTarget.value && chatType.value === 'friend') {
       const f = friends.value.find(x => x.userId === chatTarget.value.userId);
       if (f) f.unreadCount = 0;
+    }
+    if (chatTarget.value && chatType.value === 'group') {
+      const g = groups.value.find(x => x.groupId === chatTarget.value.groupId);
+      if (g) { g.unreadCount = 0; saveGroupUnreadCache(groups.value); }
     }
   });
 

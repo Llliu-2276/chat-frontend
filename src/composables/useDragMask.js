@@ -120,7 +120,6 @@ export function useDragMask(containerRef) {
 
   return {
     maskPosition,
-    isDragging,
     dragDirection,
     maskStyle,
     leftCurveStyle,

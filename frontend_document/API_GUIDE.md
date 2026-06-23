@@ -118,13 +118,30 @@ Authorization: Bearer {token}
 | `handleFriendRequest(data)` | POST | `/friends/request/handle` | 处理好友申请 `{requestId, accept}` |
 | `getReceivedRequests(params)` | GET | `/friends/request/received` | 查询收到的申请 `{status?, page?, size?}` |
 | `getSentRequests(params)` | GET | `/friends/request/sent` | 查询发出的申请 `{page?, size?}` |
-| `deleteFriend(id)` | DELETE | `/friends/:id` | 删除好友（⏳ 后端规划中） |
+| `deleteFriend(friendId)` | DELETE | `/friends/remove/:friendId` | 删除好友 |
 
 ### 5.4 心跳模块（heartbeat.js）
 
 | 函数 | 方法 | 路径 | 说明 |
 |------|------|------|------|
 | `sendHeartbeat()` | POST | `/user/heartbeat` | 发送心跳 |
+
+### 5.5 群组模块（group.js）
+
+| 函数 | 方法 | 路径 | 说明 |
+|------|------|------|------|
+| `createGroup(data)` | POST | `/group/create` | 创建群聊 `{groupName}` |
+| `getGroupList()` | GET | `/group/list` | 获取群聊列表 |
+| `getGroupInfo(groupId)` | GET | `/group/info/:groupId` | 获取群详情（含成员列表） |
+| `dissolveOrLeaveGroup(groupId)` | DELETE | `/group/:groupId` | 解散（群主）/退出（成员）群聊 |
+| `sendGroupMessage(data)` | POST | `/group/message` | 发送群聊消息 `{groupId, content}` |
+| `getGroupHistory(groupId, params)` | GET | `/group/history/:groupId` | 群聊天记录分页 `{page, size}` |
+| `getGroupMembers(groupId)` | GET | `/group/members/:groupId` | 获取群成员列表 |
+| `searchGroups(params)` | GET | `/group/search` | 搜索群聊 `{keyword, page?, size?}` |
+| `joinGroup(groupId, data)` | POST | `/group/join/:groupId` | 申请加入群聊 `{message?}`（需审批） |
+| `handleJoinRequest(groupId, data)` | POST | `/group/:groupId/join-request/:requestId/handle` | 处理入群申请（群主） `{requestId, accept}` |
+| `getJoinRequests(groupId, params?)` | GET | `/group/:groupId/join-requests` | 查入群申请（群主看全部/用户看自己） |
+| `getGroupNotifications(groupId, params?)` | GET | `/group/:groupId/notifications` | 查群通知历史（成员变动等） |
 
 ---
 
@@ -216,7 +233,11 @@ wsManager.connect();
 | `READ_RECEIPT` | `senderId`, `recordId` | 对方已读 |
 | `GROUP_MESSAGE` | `senderId`, `senderName`, `groupId`, `content`, `sendTime`, `recordId` | 收到群聊消息 |
 | `GROUP_MEMBER_JOIN` | `groupId`, `groupName`, `senderId`, `senderName` | 群成员加入 |
-| `GROUP_MEMBER_LEAVE` | `groupId`, `groupName`, `senderId`, `senderName` | 群成员退出/群解散 |
+| `GROUP_MEMBER_LEAVE` | `groupId`, `groupName`, `senderId`, `senderName` | 群成员退出 |
+| `GROUP_DISBANDED` | `groupId`, `senderId`, `senderName`, `content`, `sendTime` | 群聊解散 |
+| `GROUP_OWNER_TRANSFERRED` | `groupId`, `senderId`, `senderName`, `targetUserId`, `content`, `sendTime` | 群主转让 |
+| `JOIN_GROUP_REQUEST` | `senderId`, `senderName`, `groupId`, `content`, `requestId`, `sendTime` | 收到入群申请（群主） |
+| `JOIN_GROUP_REQUEST_RESULT` | `senderId`, `senderName`, `groupId`, `groupName`, `content`(accepted\|rejected), `requestId`, `sendTime` | 入群申请结果（申请人） |
 | `ERROR` | `error` | 错误通知 |
 
 ### 7.3 事件订阅

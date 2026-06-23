@@ -179,6 +179,8 @@
 | v2.4 | 2026-06-21 | JOIN_GROUP_REQUEST纳入MessageType枚举；新增ChatMessage.joinGroupRequest()工厂方法；POST /join/{groupId}支持?message=可选留言；WebSocket消息类型文档补齐 |
 | v2.5 | 2026-06-21 | 新增编辑群聊信息(PUT)；新增GROUP_DISBANDED消息类型(区分群解散/退出)；集成Swagger(springdoc-openapi) |
 | v2.6 | 2026-06-22 | 修复Swagger 401拦截；文档与在线文档对齐(汇总表补录14个接口、删除1个未实现、新增拉黑模块表、WebSocket类型补全) |
+| v2.7 | 2026-06-23 | 入群留言改请求体(JoinGroupDTO)；入群申请查询放宽权限(群主看全部/非群主看自己的)；群通知查询放宽权限(成员看全部/非成员看相关) |
+| v2.8 | 2026-06-23 | 群主查看入群申请不限状态(待处理/已同意/已拒绝)；新增WS消息类型JOIN_GROUP_REQUEST_RESULT(审批后推送给申请人) |
 
 ---
 
@@ -194,4 +196,4 @@
 
 ---
 
-**文档中心 v2.6** | 最后更新：2026-06-22
+**文档中心 v2.8** | 最后更新：2026-06-23

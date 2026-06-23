@@ -18,18 +18,6 @@ export function getCurrentUser() {
 }
 
 /**
- * 根据 ID 获取用户信息
- * @param {number} userId - 用户 ID
- * @returns {Promise} 返回用户信息
- */
-export function getUserById(userId) {
-  return request({
-    url: `/user/profile/info/${userId}`,
-    method: 'GET',
-  });
-}
-
-/**
  * 修改用户名
  * @param {Object} data - { userName }
  * @returns {Promise} 返回更新后的用户信息
@@ -68,13 +56,3 @@ export function searchUsers(params) {
   });
 }
 
-/**
- * 获取在线用户数量
- * @returns {Promise} 返回在线人数
- */
-export function getOnlineCount() {
-  return request({
-    url: '/user/search/count',
-    method: 'GET',
-  });
-}

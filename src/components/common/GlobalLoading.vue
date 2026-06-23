@@ -17,6 +17,8 @@
  * 全局加载组件
  * 提供全屏加载遮罩和加载动画
  */
+defineOptions({ name: 'GlobalLoading' });
+
 import { ref } from 'vue';
 
 // 是否可见

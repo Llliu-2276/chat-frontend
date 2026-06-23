@@ -79,12 +79,12 @@
 | 群成员列表 | GET | `/api/group/members/{groupId}` | ✅ |
 | 搜索群聊 | GET | `/api/group/search?keyword=&page=&size=` | ✅ |
 | 编辑群聊信息 | PUT | `/api/group/{groupId}` | ✅ |
-| 加入群聊 | POST | `/api/group/join/{groupId}?message=`(可选) | ✅ |
+| 加入群聊 | POST | `/api/group/join/{groupId}` (Body: `{message}`) | ✅ |
 | 标记群消息已读 | POST | `/api/group/{groupId}/read/{recordId}` | ✅ |
 | 群未读消息数 | GET | `/api/group/{groupId}/unread-count` | ✅ |
-| 查看入群申请 | GET | `/api/group/{groupId}/join-requests` | ✅ |
+| 查看入群申请 | GET | `/api/group/{groupId}/join-requests`（群主看全部状态/用户看自己） | ✅ |
 | 处理入群申请 | POST | `/api/group/{groupId}/join-request/{requestId}/handle` | ✅ |
-| 群通知列表 | GET | `/api/group/{groupId}/notifications` | ✅ |
+| 群通知列表 | GET | `/api/group/{groupId}/notifications`（成员看全部/非成员看相关） | ✅ |
 | 踢出群成员 | DELETE | `/api/group/{groupId}/member/{targetUserId}` | ✅ |
 | 转让群主 | POST | `/api/group/{groupId}/transfer/{targetUserId}` | ✅ |
 | 邀请好友入群 | POST | `/api/group/{groupId}/invite/{inviteeId}` | ✅ |
@@ -125,6 +125,7 @@
 | `HEARTBEAT` | S→C | 心跳响应 |
 | `GROUP_READ_RECEIPT` | C→S | 群聊消息已读回执（字段：senderId, groupId, recordId） |
 | `JOIN_GROUP_REQUEST` | S→C | 入群申请通知（字段：senderId申请人, senderName, groupId, content, requestId, sendTime） |
+| `JOIN_GROUP_REQUEST_RESULT` | S→C | 入群申请结果通知（字段：senderId群主, senderName, groupId, groupName, content=accepted/rejected, requestId, sendTime） |
 | `GROUP_DISBANDED` | S→C | 群聊解散通知（字段：groupId, senderId群主, senderName, content, sendTime） |
 | `MESSAGE_RECALL` | S→C | 消息撤回通知（字段：senderId, senderName, recordId, groupId/receiverId） |
 | `GROUP_OWNER_TRANSFERRED` | S→C | 群主转让通知（字段：groupId, senderId旧群主, targetUserId新群主） |
@@ -589,4 +590,4 @@ ws.send(JSON.stringify({
 
 ---
 
-**快速参考手册 v2.6** | 更新于 2026-06-22
+**快速参考手册 v2.8** | 更新于 2026-06-23

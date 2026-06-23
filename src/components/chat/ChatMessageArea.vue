@@ -196,10 +196,11 @@ const messagesWithDividers = computed(() =>
   align-items: center;
   gap: 12px;
   padding: 14px 24px;
-  background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-  color: #fff;
+  background: rgba(56, 239, 125, 0.22);
+  border: 1.5px solid rgba(56, 239, 125, 0.45);
+  border-bottom: none;
   border-radius: 16px 16px 0 0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  color: #333;
 }
 .chat-target-info {
   flex: 1;
@@ -231,9 +232,9 @@ const messagesWithDividers = computed(() =>
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  border: none;
-  background: rgba(255, 255, 255, 0.2);
-  color: #fff;
+  border: 1.5px solid rgba(56, 239, 125, 0.45);
+  background: rgba(56, 239, 125, 0.15);
+  color: #11998e;
   cursor: pointer;
   font-size: 18px;
   align-items: center;

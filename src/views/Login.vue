@@ -151,6 +151,8 @@
  * 登录/注册页面
  * 包含登录和注册表单，支持可拖动遮罩切换
  */
+defineOptions({ name: 'Login' });
+
 import { ref, inject } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import { useRouter } from 'vue-router';

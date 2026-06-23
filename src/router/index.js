@@ -25,6 +25,11 @@ const routes = [
     component: () => import('@/views/Chat.vue'),
     meta: { title: '聊天', requiresAuth: true },
   },
+  // 404 通配：未匹配路由重定向到登录页
+  {
+    path: '/:pathMatch(.*)*',
+    redirect: '/login',
+  },
 ];
 
 // 创建路由实例

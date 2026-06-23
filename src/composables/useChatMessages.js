@@ -299,7 +299,5 @@ export function useChatMessages(chatTarget, chatType, friends, messageAreaRef, u
     loadChatHistory,
     onSendMessage,
     handleScroll,
-    // 工具函数
-    formatLocalDateTime,
   };
 }

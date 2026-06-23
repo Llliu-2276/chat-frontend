@@ -13,6 +13,8 @@
  * 应用根组件
  * 提供路由视图和全局组件
  */
+defineOptions({ name: 'App' });
+
 import { ref, provide } from 'vue';
 import GlobalLoading from '@/components/common/GlobalLoading.vue';
 import { ElMessage } from 'element-plus';

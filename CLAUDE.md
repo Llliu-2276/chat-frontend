@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Real-time chat frontend — Vue 3 (Composition API, `<script setup>`) + Pinia + Element Plus + native WebSocket. Pure JavaScript with JSDoc type annotations (NOT TypeScript). Built with Vite 5.4.
+Real-time chat frontend — Vue 3 (Composition API, `<script setup>`) + Pinia + Element Plus + native WebSocket. Pure JavaScript with JSDoc type annotations (NOT TypeScript). Built with Vite 5.4. Dev server on `localhost:5174`, host `0.0.0.0` (LAN/穿透 accessible), auto-opens browser. Path alias `@` maps to `./src`.
 
 ## Development Rules
 
@@ -25,6 +25,8 @@ npm run preview          # Preview production build
 
 Development requires Node.js >= 18 and the Spring Boot backend running on `localhost:8080`.
 
+**Editor setup**: `.vscode/extensions.json` recommends Volar (`Vue.volar`) for Vue 3 IDE support. `.idea/` contains JetBrains settings including Prettier auto-run on save.
+
 ## Environment Config
 
 - `.env` — shared defaults (relative paths for production/tunnel): `VITE_API_BASE_URL=/api`, `VITE_WS_URL=/ws/chat`
@@ -32,6 +34,12 @@ Development requires Node.js >= 18 and the Spring Boot backend running on `local
 - `.env.production` — relative paths: `VITE_API_BASE_URL=/api`, `VITE_WS_URL=/ws/chat` (Nginx reverse-proxies to backend)
 
 The `VITE_WS_URL` value can be absolute (`ws://`/`wss://`) or relative (`/ws/chat`). When relative, `wsManager` auto-derives protocol from `window.location.protocol` (ws: for http, wss: for https).
+
+## Documentation
+
+Two documentation directories complement this file:
+- **`frontend_document/`** (7 files) — ARCHITECTURE, COMPONENTS, API_GUIDE, STATE_MANAGEMENT, CODE_STANDARDS, NGINX_DEPLOYMENT, plus README index. Update these when your changes affect their content (see "Development Rules" — 同步前端文档).
+- **`backend_document/`** (6 files) — API_DOCUMENTATION, ErrorCode, WEBSOCKET_UPGRADE, QUICK_REFERENCE, FRONTEND_DOCS_README, 后端代码规范文档. Use these when you need backend API details, error codes, or WebSocket protocol specs. Note: some versions may be outdated — always cross-check with actual Swagger UI or backend source when behavior doesn't match.
 
 ## Architecture: Three-Layer Data Flow
 
@@ -85,19 +93,27 @@ Same pattern as PRIVATE_MESSAGE — both `useChatMessages` and `useFriendList` r
 
 Handled by `useFriendList` — stored to `groupNotifications[]` (max 100), a toast notification is shown, and group list is refreshed via `loadGroups({ silent: true })`. Group notifications flow: WS event → useFriendList.groupNotifications[] → Chat.vue passes to ChatNotificationPanel → ChatNotificationGroup renders as system message bubbles.
 
+**REST 类型名规范化**：`loadGroupNotificationsHistory()` 加载 REST 历史时，后端返回 `MEMBER_JOIN`/`MEMBER_LEAVE`（不带 `GROUP_` 前缀），而 WS 消息使用 `GROUP_MEMBER_JOIN`/`GROUP_MEMBER_LEAVE`。加载时在 `useFriendList` 中统一规范化为 `GROUP_` 前缀格式，确保模板中的条件判断一致。
+
+**JOIN 通知的群聊视角**：`ChatNotificationGroup` 将 JOIN 通知渲染为群聊公告样式——头像为群名首字（绿底 `#c8e6c9`）、发送者显示为「XXX」群通知、内容为实际加入者名字（优先取 `content` 字段，降级用 `senderName` 构造）。这解决了后端 REST 通知中 JOIN 事件的 `senderId`/`senderName` 可能存为群主而非实际成员的数据不一致问题。
+
+**退出通知的双侧渲染**：他人退出 → 左侧气泡；自己退出（`isSelfLeave = type === 'GROUP_MEMBER_LEAVE' && senderId === currentUserId`）→ 右侧绿色气泡。`isSelfLeave` 函数在 `ChatNotificationGroup.vue` 中定义。
+
+**群名同步**：`syncNotificationGroupNames()` 在每次 `loadGroups()` 完成后运行，用最新的 `groups` 列表更新 `groupNotifications` 中的 `groupName`，解决 WS 消息不含 `groupName` 字段导致显示「群聊x」的问题。
+
 ### JOIN_GROUP_REQUEST
 
 Handled by `useNotifications` — sent by backend to group owners when someone applies to join (backend v2.1). Handler stores to `joinGroupRequests[]` (max 50) and shows a toast with applicant name + group name. Group name is resolved from the `groups` ref (injected dependency) with fallback to the WS message's `content` field. Group owners can approve/reject via `handleJoinRequestAction()`, which uses `splice(idx, 1, updated)` to replace array elements (necessary for Vue computed reactivity on `allGroupItems`).
 
 Self-initiated join requests are added via `addSelfJoinRequest()` (called through Chat.vue's `onJoinRequestSent` callback → `useSidePanel`). Already-processed requests (status ≠ 0) are filtered out in `ChatNotificationGroup.allGroupItems` computed.
 
-### Note — useFriendList manages both friends and groups
+### Note — useFriendList manages friends, groups, AND notification section
 
-Despite its name, this composable owns both `friends[]` and `groups[]` reactive arrays, exposes both `loadFriends()` and `loadGroups()`, and registers WS handlers for both friend events (ONLINE/OFFLINE) and group events (GROUP_MESSAGE, GROUP_MEMBER_JOIN/LEAVE). The name is historical — when modifying, be aware it's the single composable that owns all sidebar list state.
+Despite its name, this composable owns both `friends[]` and `groups[]` reactive arrays, exposes both `loadFriends()` and `loadGroups()`, and registers WS handlers for both friend events (ONLINE/OFFLINE) and group events (GROUP_MESSAGE, GROUP_MEMBER_JOIN/LEAVE, GROUP_DISBANDED, GROUP_OWNER_TRANSFERRED). It also manages a third collapsible section with `notificationsExpanded` ref — the "通知" section in ChatLeftPanel that contains friend notification and group notification entry items. The name is historical — when modifying, be aware it's the single composable that owns all sidebar list state.
 
 ### Pending Work (TODO)
 
-Check `.claude/TODO_群聊系统待实现.md` before starting any group-chat related work. The document tracks backend APIs and WebSocket message types that are implemented on the server but not yet wired into the frontend. Key gaps as of 2026-06-22:
+Check `.claude/TODO_群聊系统待实现.md` before starting any group-chat related work (note: `.claude/` is gitignored — this file is local-only). The document tracks backend APIs and WebSocket message types that are implemented on the server but not yet wired into the frontend, plus known bugs (B1-B4). Key gaps as of 2026-06-22:
 
 | Priority | Category | Items |
 |----------|----------|-------|
@@ -193,8 +209,8 @@ Every async function that calls a backend API must follow this pattern:
 
 - `api/auth.js` — login/register/logout
 - `api/user.js` — profile CRUD, search users, online count
-- `api/friend.js` — friend list, messages (send/history/unread), friend requests (send/handle/received/sent), delete friend
-- `api/group.js` — create/list/info, members, messages (send/history), search groups, join/dissolve/leave, handle join requests (v2.1)
+- `api/friend.js` — friend list, messages (send/history/unread), friend requests (send/handle/received/sent), delete friend. Note: `sendMessage` is imported as `sendMessageApi` in `useChatMessages` to avoid collision with the composable's own `sendMessage` method
+- `api/group.js` — create/list/info, members, messages (send/history), search groups, join/dissolve/leave, handle join requests, get join requests list, get group notifications (v2.1)
 - `api/heartbeat.js` — POST heartbeat
 
 **`handleUnauthorized()`**: Performs full cleanup — clears Pinia Store (`userStore.token = ''`, `userStore.userInfo = null`), removes localStorage (`removeToken()` + `removeUserInfo()`), stops heartbeat, disconnects WebSocket, shows `ElMessage.error('登录已过期，请重新登录')`, redirects to `/login?redirect=...`. The cleanup is consistent with `useUserStore.clearUserState()`.
@@ -239,8 +255,8 @@ Critical string enums used across composables and components — must match exac
 ## Design System
 
 Global styles are split across two files:
-- `src/style.css` — base element resets and CSS variables for the entire app
-- `src/assets/shared.css` — shared design tokens, form controls, avatars, badges, animations
+- `src/style.css` — base CSS reset only (margin/padding/box-sizing, body font, `#app` sizing). CSS variables live exclusively in `shared.css`
+- `src/assets/shared.css` — shared design tokens (CSS custom properties in `:root`), form controls, avatars, badges, animations
 
 All shared design tokens in `assets/shared.css`:
 - **Primary gradient**: `linear-gradient(135deg, #11998e 0%, #38ef7d 100%)`
@@ -260,9 +276,12 @@ All shared design tokens in `assets/shared.css`:
 | `FRIEND_REQUEST` | receive | `useNotifications` | Shows toast + preloads received list (dedup by senderId+status) |
 | `FRIEND_REQUEST_RESULT` | receive | `useNotifications` | Shows toast + refreshes friends if accepted |
 | `GROUP_MESSAGE` | send/receive | `useChatMessages` + `useFriendList` | Dual-handler: display + sidebar unread/last-message + unread persistence |
-| `GROUP_MEMBER_JOIN` | receive | `useFriendList` | Store to `groupNotifications[]` (max 100) + toast + `loadGroups({ silent: true })` |
-| `GROUP_MEMBER_LEAVE` | receive | `useFriendList` | Same handler as JOIN (dedup by `groupId+senderId+type`) |
+| `GROUP_MEMBER_JOIN` | receive | `useFriendList` (+ `useNotifications`) | Store to `groupNotifications[]` (max 100) + toast + `loadGroups({ silent: true })`. `useNotifications` also handles as fallback approval detector (senderId===userId → update self join-request status). Rendered as group-announcement: avatar=group initial, sender="「XXX」群通知". |
+| `GROUP_MEMBER_LEAVE` | receive | `useFriendList` | Same handler as JOIN. Rendered as left bubble (others) or right bubble (self: `isSelfLeave`). |
+| `GROUP_DISBANDED` | receive | `useFriendList` | Removes group from `groups[]`, shows toast "群聊 [name] 已解散", switches to friend list if currently viewing that group |
+| `GROUP_OWNER_TRANSFERRED` | receive | `useFriendList` | Shows toast with old→new owner names, refreshes group list silently |
 | `JOIN_GROUP_REQUEST` | receive | `useNotifications` | Store to `joinGroupRequests[]` (max 50) + toast (sent to group owners — backend v2.1). Resolves group name from `groups` ref with WS content field fallback. |
+| `JOIN_GROUP_REQUEST_RESULT` | receive | `useNotifications` | Updates self-join request status (accepted→1, rejected→2) + toast + refreshes group list if accepted. `GROUP_MEMBER_JOIN` serves as fallback. |
 | `ERROR` | receive | `Chat.vue` + `wsManager` (fallback) | Chat.vue handles auth errors → force logout; wsManager provides default `console.error` for any unhandled types |
 
 Types are defined as JSDoc `@typedef` in `types/index.js`. All WS message types the client sends (`PRIVATE_MESSAGE`, `GROUP_MESSAGE`, `READ_RECEIPT`) are sent as `{ type, ...data }` objects via `wsManager.send()`.

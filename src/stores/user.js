@@ -8,7 +8,7 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { login as loginApi, register as registerApi, logout as logoutApi } from '@/api/auth';
 import { getCurrentUser } from '@/api/user';
-import { setToken, removeToken, setUserInfo, removeUserInfo, getUserInfo } from '@/utils/storage';
+import { setToken, getToken, removeToken, setUserInfo, removeUserInfo, getUserInfo } from '@/utils/storage';
 import { heartbeatManager } from '@/utils/heartbeat';
 import { wsManager } from '@/utils/websocket';
 import router from '@/router';
@@ -139,7 +139,7 @@ export const useUserStore = defineStore('user', () => {
    * 应用启动时调用，恢复登录状态
    */
   function initUserState() {
-    const savedToken = localStorage.getItem('chat_token');
+    const savedToken = getToken();
     const savedUserInfo = getUserInfo();
 
     if (savedToken && savedUserInfo) {

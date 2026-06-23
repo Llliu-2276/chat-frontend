@@ -56,11 +56,3 @@ export function removeUserInfo() {
   localStorage.removeItem(USER_INFO_KEY);
 }
 
-/**
- * 清除所有认证相关数据
- * 同时移除 Token 和用户信息
- */
-export function clearAuth() {
-  removeToken();
-  removeUserInfo();
-}

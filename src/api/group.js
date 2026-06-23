@@ -108,18 +108,20 @@ export function searchGroups(params) {
 }
 
 /**
- * 加入群聊（发送加群申请）
- * 后端 v2.1+ 为审批制：message 作为 query 参数通过 URL 传递
+ * 加入群聊（发送加群申请 — 审批制）
+ * 同时通过 URL 查询参数（v2.4-v2.6 兼容）和请求体（v2.7+）传递 message，
+ * 确保无论后端运行哪个版本都能正确收到申请留言。
  * @param {number} groupId - 群组ID
  * @param {Object} [data] - 可选参数
  * @param {string} [data.message] - 申请留言（最大200字符）
- * @returns {Promise} 返回加入结果（成功码 201）
+ * @returns {Promise} 返回加入结果（成功码 201），res.data 可能含 requestId
  */
 export function joinGroup(groupId, data = {}) {
   return request({
     url: `/group/join/${groupId}`,
     method: 'POST',
-    params: data,
+    params: data,  // v2.4-v2.6: URL 查询参数（@RequestParam message）
+    data: data,    // v2.7+: JSON 请求体（@RequestBody JoinGroupDTO）
   });
 }
 
@@ -138,14 +140,19 @@ export function handleJoinRequest(groupId, data) {
 }
 
 /**
- * 查询入群申请列表（群主视角 — 后端 v2.1）
+ * 查询入群申请列表（后端 v2.1，v2.7 放宽权限）
+ * 群主：查看该群所有待处理申请；非群主：查看自己在该群的入群申请（不限状态）
  * @param {number} groupId - 群组ID
- * @returns {Promise} 返回待处理的入群申请列表
+ * @param {Object} [params] - 可选分页参数
+ * @param {number} [params.page=1] - 页码
+ * @param {number} [params.size=50] - 每页数量（默认50，避免遗漏非第一页的自己的申请）
+ * @returns {Promise} 返回分页的入群申请列表
  */
-export function getJoinRequests(groupId) {
+export function getJoinRequests(groupId, params = { page: 1, size: 50 }) {
   return request({
     url: `/group/${groupId}/join-requests`,
     method: 'GET',
+    params,
   });
 }
 

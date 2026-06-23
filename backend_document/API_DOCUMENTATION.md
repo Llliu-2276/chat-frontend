@@ -1,6 +1,6 @@
 # 📘 ChatBackend 前后端对接文档
 
-> **文档版本**: v2.6  
+> **文档版本**: v2.8  
 > **更新日期**: 2026-06-22  
 > **适用对象**: 前端开发工程师  
 > **后端技术栈**: Spring Boot 4.0.2 + JWT + Redis + MySQL
@@ -2091,27 +2091,29 @@ POST /api/group/{groupId}/invite/{inviteeId}
 ### 3.6.16 申请加入群聊（需审批）
 
 ```
-POST /api/group/join/{groupId}?message=我想加入这个群
+POST /api/group/join/{groupId}
+Body: { "message": "我想加入这个群" }
 ```
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | groupId | Long | ✅ | 群组ID（路径） |
-| message | String | ❌ | 申请留言（可选，最大200字符） |
+| message | String | ❌ | 申请留言（请求体，可选，最大200字符） |
 
-> ⚠️ **v2.1 变更**：加入群聊改为审批制，不再直接入群。好友邀请入群（3.6.14）不受影响，仍直接加入。
+> ⚠️ **v2.1 变更**：加入群聊改为审批制，不再直接入群。好友邀请入群（3.6.14）不受影响，仍直接加入。  
+> ⚠️ **v2.7 变更**：message 参数由 URL 查询参数改为请求体传递，避免特殊字符 URL 编码截断。
 
 **响应**：`{"code":201, "message":"入群申请已发送，等待群主审批"}`
 **流程**：用户申请 → 群主收到 WebSocket `JOIN_GROUP_REQUEST` 推送 → 群主审批
 
-### 3.6.17 查看入群申请（群主）
+### 3.6.17 查看入群申请
 
 ```
 GET /api/group/{groupId}/join-requests?page=1&size=20
 ```
 
-**响应**：分页返回待处理申请，每项含 applicantId/Name、createTime  
-**认证**：✅（仅群主）
+**响应**：分页返回入群申请，每项含 applicantId/Name、message、status、statusDescription（待处理/已同意/已拒绝）、createTime  
+**认证**：✅（群主查看该群所有入群申请，不限状态；非群主只可查看自己在该群的入群申请）
 
 ### 3.6.18 处理入群申请
 
@@ -2152,8 +2154,8 @@ GET /api/group/history/{groupId}/search?keyword=你好&page=1&size=20
 GET /api/group/{groupId}/notifications?page=1&size=20
 ```
 
-**响应**：分页返回群通知（成员加入/退出、群主转让等）  
-**认证**：✅（须是群成员）
+**响应**：分页返回群通知（成员加入/退出、群主转让等），每项含 senderId/Name、targetUserId/Name、type、typeDescription、content、createTime  
+**认证**：✅（群成员查看该群所有通知；非群成员只可查看与自己相关的通知，即 senderId 或 targetUserId 等于自己的记录）
 
 ---
 
@@ -2271,11 +2273,11 @@ GET /api/user/blocked-list
 | `DELETE /api/group/{groupId}/member/{targetUserId}` | DELETE | 踢出群成员（仅群主） | ✅ 已实现 |
 | `POST /api/group/{groupId}/transfer/{targetUserId}` | POST | 转让群主 | ✅ 已实现 |
 | `POST /api/group/{groupId}/invite/{inviteeId}` | POST | 邀请好友入群 | ✅ 已实现 |
-| `GET /api/group/{groupId}/join-requests` | GET | 查看入群申请（仅群主） | ✅ 已实现 |
+| `GET /api/group/{groupId}/join-requests` | GET | 查看入群申请（群主看全部，用户看自己的） | ✅ 已实现 |
 | `POST /api/group/{groupId}/join-request/{requestId}/handle` | POST | 处理入群申请 | ✅ 已实现 |
 | `POST /api/group/{groupId}/message/{recordId}/recall` | POST | 撤回群聊消息（2分钟内） | ✅ 已实现 |
 | `GET /api/group/history/{groupId}/search` | GET | 搜索群聊消息 | ✅ 已实现 |
-| `GET /api/group/{groupId}/notifications` | GET | 群聊通知列表 | ✅ 已实现 |
+| `GET /api/group/{groupId}/notifications` | GET | 群聊通知列表（成员看全部，非成员看相关） | ✅ 已实现 |
 
 ### 4.8 用户档案接口
 
@@ -3254,6 +3256,8 @@ async function safeApiCall(url, options) {
 | v2.4 | 2026-06-21 | JOIN_GROUP_REQUEST纳入MessageType枚举；ChatMessage.joinGroupRequest()工厂方法；POST /join/{groupId}支持message留言；WebSocket消息类型文档补齐 | 后端团队 |
 | v2.5 | 2026-06-21 | 编辑群聊信息(PUT /group/{groupId})；GROUP_DISBANDED消息类型区分群解散/退出；集成Swagger(springdoc-openapi) | 后端团队 |
 | v2.6 | 2026-06-22 | Swagger UI 401拦截修复(SecurityConfig+JwtAuthenticationFilter放行)；文档汇总表与在线文档对齐(补录14个接口、删除1个、新增拉黑模块表) | 后端团队 |
+| v2.7 | 2026-06-23 | 入群留言改为请求体传递(JoinGroupDTO)；入群申请查询放宽(群主看全部/非群主看自己的)；群通知查询放宽(成员看全部/非成员看相关的) | 后端团队 |
+| v2.8 | 2026-06-23 | 群主查看入群申请不限状态(待处理/已同意/已拒绝)；新增WS消息类型JOIN_GROUP_REQUEST_RESULT(审批后推送给申请人) | 后端团队 |
 
 ---
 

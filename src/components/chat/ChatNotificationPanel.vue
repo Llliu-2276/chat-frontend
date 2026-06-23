@@ -4,7 +4,7 @@
  * 委托具体渲染到 ChatNotificationFriend / ChatNotificationGroup
  -->
 <template>
-  <div class="notification-panel glass-card" :class="{ 'mobile-show': mobileShow }">
+  <div ref="panelRef" class="notification-panel glass-card" :class="{ 'mobile-show': mobileShow }">
     <!-- 头部：好友通知 -->
     <div v-if="initialTab === 'friend'" class="notification-header">
       <button class="mobile-back-btn" @click="$emit('back-to-list')">
@@ -44,6 +44,7 @@
       v-if="initialTab === 'group'"
       :group-notifications="groupNotifications"
       :join-group-requests="joinGroupRequests"
+      :current-user-id="currentUserId"
       @handle-join-request="(gid, rid, accept) => $emit('handle-join-request', gid, rid, accept)"
       @view-profile="(user) => $emit('view-profile', user)"
     />
@@ -51,13 +52,14 @@
 </template>
 
 <script setup>
+import { ref, watch, nextTick, onMounted } from 'vue';
 import { ArrowLeft } from '@element-plus/icons-vue';
 import ChatNotificationFriend from '@/components/chat/ChatNotificationFriend.vue';
 import ChatNotificationGroup from '@/components/chat/ChatNotificationGroup.vue';
 
 defineOptions({ name: 'ChatNotificationPanel' });
 
-defineProps({
+const props = defineProps({
   receivedRequests: { type: Array, default: () => [] },
   sentRequests: { type: Array, default: () => [] },
   loadingReceived: { type: Boolean, default: false },
@@ -71,9 +73,59 @@ defineProps({
   joinGroupRequests: { type: Array, default: () => [] },
   initialTab: { type: String, default: 'friend' },
   mobileShow: { type: Boolean, default: false },
+  currentUserId: { type: Number, default: 0 },
 });
 
 defineEmits(['handle-request', 'handle-join-request', 'load-more', 'back-to-list', 'view-profile']);
+
+const panelRef = ref(null);
+
+/** 判断当前是否接近滚动容器底部 */
+function isNearBottom(el) {
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+}
+
+/**
+ * 滚动到最新通知（底部）
+ * @param {boolean} force - 强制滚动（切换面板时使用）
+ */
+function scrollToBottom(force = false) {
+  nextTick(() => {
+    const bubbleFlow = panelRef.value?.querySelector('.bubble-flow');
+    if (!bubbleFlow) return;
+    // 仅在强制滚动、容器在顶部（初始态）或已在底部时自动滚动
+    if (force || bubbleFlow.scrollTop === 0 || isNearBottom(bubbleFlow)) {
+      // 二次 nextTick + setTimeout 确保浏览器完成布局后再滚动
+      nextTick(() => {
+        setTimeout(() => {
+          const el = panelRef.value?.querySelector('.bubble-flow');
+          if (el) el.scrollTop = el.scrollHeight;
+        }, 60);
+      });
+    }
+  });
+}
+
+// 面板切换 / 移动端显示 → 强制滚动到底部
+watch(() => props.initialTab, () => scrollToBottom(true));
+watch(() => props.mobileShow, (show) => { if (show) scrollToBottom(true); });
+
+// 好友通知数据变化 → 仅在好友 tab 时跟踪
+watch(
+  () => [props.receivedRequests?.length || 0, props.sentRequests?.length || 0],
+  () => { if (props.initialTab === 'friend') scrollToBottom(); },
+  { deep: false }
+);
+
+// 群聊通知数据变化 → 仅在群聊 tab 时跟踪
+watch(
+  () => [props.groupNotifications?.length || 0, props.joinGroupRequests?.length || 0],
+  () => { if (props.initialTab === 'group') scrollToBottom(); },
+  { deep: false }
+);
+
+// 挂载时强制滚动到底部（处理数据在挂载前已填充的场景，如发送入群申请后跳转）
+onMounted(() => scrollToBottom(true));
 </script>
 
 <!-- 共享样式（unscoped → 子组件可使用 .bubble-flow / .bubble / .message-row 等类） -->
@@ -95,25 +147,27 @@ defineEmits(['handle-request', 'handle-join-request', 'load-more', 'back-to-list
   align-items: center;
   gap: 12px;
   padding: 14px 24px;
-  background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-  color: #fff;
+  background: rgba(56, 239, 125, 0.22);
+  border: 1.5px solid rgba(56, 239, 125, 0.45);
+  border-bottom: none;
   border-radius: 16px 16px 0 0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  color: #333;
 }
 .notification-title { font-size: 16px; font-weight: 600; }
 
 .header-badge {
   min-width: 20px; height: 20px; padding: 0 6px;
-  border-radius: 10px; background: rgba(255,255,255,0.3);
-  color: #fff; font-size: 12px; font-weight: 600;
+  border-radius: 10px; background: rgba(17, 153, 142, 0.15);
+  color: #0e8a7e; font-size: 12px; font-weight: 600;
   display: flex; align-items: center; justify-content: center; line-height: 1;
 }
-.header-badge.group-badge { background: rgba(255,255,255,0.25); }
+.header-badge.group-badge { background: rgba(17, 153, 142, 0.12); }
 
 .mobile-back-btn {
   display: none; width: 36px; height: 36px; border-radius: 50%;
-  border: none; background: rgba(255,255,255,0.2); color: #fff;
-  cursor: pointer; font-size: 18px; align-items: center; justify-content: center;
+  border: 1.5px solid rgba(56, 239, 125, 0.45); background: rgba(56, 239, 125, 0.15);
+  color: #11998e; cursor: pointer; font-size: 18px;
+  align-items: center; justify-content: center;
 }
 
 /* ==================== 气泡对话流 ==================== */
@@ -181,6 +235,24 @@ defineEmits(['handle-request', 'handle-join-request', 'load-more', 'back-to-list
 .group-notif-bubble { gap: 4px; }
 .group-notif-action { font-weight: 600; color: #11998e; }
 .group-notif-group-name { font-weight: 600; color: #333; }
+
+/* 未读通知圆点 */
+.unread-dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #ff6b35;
+  margin-left: 6px;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.join-req-message {
+  font-size: 13px; line-height: 1.5;
+  padding: 6px 10px; border-radius: 8px;
+  background: rgba(0,0,0,0.05); color: #555;
+  margin-top: 4px; word-break: break-word;
+}
 
 /* ==================== 响应式 ==================== */
 @media (max-width: 767px) {

@@ -4,7 +4,7 @@
  *
  * @module composables/useSidePanel
  */
-import { ref, watch } from 'vue';
+import { ref, watch, onBeforeUnmount } from 'vue';
 import { searchUsers } from '@/api/user';
 import { sendFriendRequest } from '@/api/friend';
 import { createGroup, searchGroups, joinGroup } from '@/api/group';
@@ -295,9 +295,11 @@ export function useSidePanel({ toast, sentRequests, loadGroups, onJoinRequestSen
       const res = await joinGroup(group.groupId, { message });
       if (res.code === 201) {
         toast.success(`已发送加群申请，等待群主「${group.ownerName || '审核'}」`);
+        // 从响应中提取 requestId（若后端返回），用于精准去重
+        const requestId = res.data?.requestId || res.data?.id || 0;
         // 通知父组件记录自己发出的申请
         if (onJoinRequestSent) {
-          onJoinRequestSent({ groupId: group.groupId, groupName: group.groupName });
+          onJoinRequestSent({ groupId: group.groupId, groupName: group.groupName, message, requestId });
         }
         groupSearchResults.value = [];
         closeSidePanel();
@@ -339,6 +341,13 @@ export function useSidePanel({ toast, sentRequests, loadGroups, onJoinRequestSen
     resetPanelState();
   });
 
+  // ==================== 生命周期清理 ====================
+  // 自清理 debounce 定时器（Chat.vue 的 _cleanupSidePanel 作为额外安全网）
+  onBeforeUnmount(() => {
+    _panelDebounce?.cancel();
+    _groupDebounce?.cancel();
+  });
+
   return {
     // 面板状态
     showSidePanel,
@@ -361,10 +370,10 @@ export function useSidePanel({ toast, sentRequests, loadGroups, onJoinRequestSen
     handleCreateGroup,
     handleJoinGroup,
     handleSendMessageToGroup,
-    // 清理
+    // 清理（Chat.vue 双重保险）
     _cleanupSidePanel() {
-      _panelDebounce.cancel();
-      _groupDebounce.cancel();
+      _panelDebounce?.cancel();
+      _groupDebounce?.cancel();
     },
   };
 }

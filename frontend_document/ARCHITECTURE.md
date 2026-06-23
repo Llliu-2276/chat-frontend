@@ -2,7 +2,7 @@
 
 > **技术栈**: Vue 3 + Vue Router + Pinia + Axios + Element Plus + Vite  
 > **创建日期**: 2026-05-27  
-> **最后更新**: 2026-06-10
+> **最后更新**: 2026-06-23
 
 ---
 
@@ -14,13 +14,16 @@ chat_frontend/
 │   ├── API_DOCUMENTATION.md       # 完整 API 文档
 │   ├── ErrorCode.md               # 错误码说明
 │   ├── WEBSOCKET_UPGRADE.md       # WebSocket 升级说明
-│   └── ...
+│   ├── QUICK_REFERENCE.md         # 快速参考
+│   ├── FRONTEND_DOCS_README.md    # 文档索引
+│   └── 后端代码规范文档.md          # 后端代码规范
 │
 ├── frontend_document/             # 前端开发文档
 │   ├── ARCHITECTURE.md            # 项目架构（本文档）
 │   ├── COMPONENTS.md              # 组件说明
 │   ├── API_GUIDE.md               # API 调用规范
 │   ├── STATE_MANAGEMENT.md        # 状态管理说明
+│   ├── CODE_STANDARDS.md          # 代码规范
 │   └── NGINX_DEPLOYMENT.md        # Nginx + 内网穿透部署
 │
 ├── src/
@@ -28,7 +31,8 @@ chat_frontend/
 │   │   ├── request.js             # Axios 封装（拦截器、错误处理）
 │   │   ├── auth.js                # 认证接口（登录、注册、登出）
 │   │   ├── user.js                # 用户接口（资料、搜索）
-│   │   ├── friend.js              # 好友接口（列表、消息、聊天记录）
+│   │   ├── friend.js              # 好友接口（列表、消息、聊天记录、申请）
+│   │   ├── group.js               # 群聊接口（列表、创建、消息、成员）
 │   │   └── heartbeat.js           # 心跳接口
 │   │
 │   ├── assets/                    # 静态资源
@@ -40,8 +44,14 @@ chat_frontend/
 │   │   │   ├── ChatLeftPanel.vue  # 左侧面板（好友/群聊列表）
 │   │   │   ├── ChatMessageArea.vue# 消息区域（消息流+输入框）
 │   │   │   ├── ChatSidePanel.vue  # 右侧面板（容器：搜索/群聊/资料入口）
-│   │   │   ├── ChatProfileCard.vue# 个人资料卡片（本人/好友/陌生人）
-│   │   │   ├── ChatNotificationPanel.vue # 通知面板（好友申请气泡流）
+│   │   │   ├── ChatProfileCard.vue# 个人资料卡片（调度器：本人/好友/陌生人/群聊）
+│   │   │   ├── ChatNotificationPanel.vue # 通知面板（调度器：好友通知/群通知）
+│   │   │   ├── ChatNotificationFriend.vue # 好友通知气泡流（收发申请）
+│   │   │   ├── ChatNotificationGroup.vue  # 群聊通知气泡流（成员变更+入群申请）
+│   │   │   ├── ProfileSelf.vue    # 本人资料（编辑用户名/密码、登出）
+│   │   │   ├── ProfileFriend.vue  # 好友资料（发消息/删除好友）
+│   │   │   ├── ProfileStranger.vue# 陌生人资料（添加好友）
+│   │   │   ├── ProfileGroup.vue   # 群聊资料（成员列表、加入/发消息/解散/退出）
 │   │   │   └── index.js           # 统一导出
 │   │   └── common/
 │   │       └── GlobalLoading.vue  # 全局加载遮罩
@@ -59,14 +69,20 @@ chat_frontend/
 │   ├── utils/                     # 工具类
 │   │   ├── storage.js             # localStorage 封装
 │   │   ├── heartbeat.js           # 心跳管理器（单例）
-│   │   └── websocket.js           # WebSocket 管理器（单例）
+│   │   ├── websocket.js           # WebSocket 管理器（单例）
+│   │   ├── time.js                # 时间格式化/时间分隔符
+│   │   ├── debounce.js            # 防抖工具
+│   │   ├── notificationReadState.js # 群聊通知已读状态（lastReadAt 时间戳）
+│   │   └── interactedGroups.js     # 交互群 ID 持久化（退群后仍可查历史）
 │   │
 │   ├── composables/               # 业务逻辑（Composables）
 │   │   ├── useFriendList.js       # 好友/群聊列表管理
 │   │   ├── useChatMessages.js     # 聊天消息管理
 │   │   ├── useNotifications.js    # 好友申请通知流
 │   │   ├── useSidePanel.js        # 侧面板状态和搜索
-│   │   └── useProfile.js          # 个人资料操作
+│   │   ├── useProfile.js          # 个人资料操作
+│   │   ├── useDragMask.js         # 拖拽遮罩（Login.vue 提取）
+│   │   └── useDropdown.js         # 下拉菜单管理（ChatLeftPanel 提取）
 │   │
 │   ├── views/                     # 页面组件
 │   │   ├── Login.vue              # 登录/注册页（遮罩切换）
@@ -106,11 +122,11 @@ chat_frontend/
 | 模块 | 状态 | 说明 |
 |------|------|------|
 | 用户认证 | ✅ 已完成 | 登录、注册、登出、JWT Token 管理 |
-| 用户资料 | ⚠️ API 已封装 | 获取/修改用户信息、修改密码（页面待实现） |
+| 用户资料 | ✅ 已完成 | 通过 useProfile composable + ChatProfileCard 子组件（本人/好友/陌生人/群聊四种视角） |
 | 好友系统 | ✅ 已完成 | 好友列表、添加/删除好友、搜索用户 |
 | 消息收发 | ✅ 已完成 | WebSocket 优先 + REST 降级、乐观更新、已读回执 |
 | 在线状态 | ✅ 已完成 | HTTP 心跳 + WebSocket 推送双重机制 |
-| 群聊系统 | ✅ 已完成 | 群列表、创建、消息收发（WS+HTTP）、群资料、解散/退出 |
+| 群聊系统 | ✅ 已完成 | 群列表、创建、消息收发（WS+HTTP）、群资料、成员管理、解散/退出/转让、入群申请 |
 
 ---
 
@@ -131,7 +147,7 @@ chat_frontend/
                    ▼
 ┌──────────────────────────────────────────────────────┐
 │                 API 接口层                            │
-│  auth.js / user.js / friend.js / heartbeat.js        │
+│  auth.js / user.js / friend.js / group.js / heartbeat.js        │
 │  → request.js（Axios 封装 + 拦截器）                   │
 └──────────────────┬───────────────────────────────────┘
                    │ HTTP 请求
@@ -155,11 +171,9 @@ chat_frontend/
 |------|------|------|------|
 | `/` | — | — | 重定向到 `/login` |
 | `/login` | Login.vue | ❌ | 登录/注册页 |
-| `/chat` | Chat.vue | ✅ | 聊天主页 |
-| `/profile` | Profile.vue | ✅ | 个人资料页 |
-| `/search` | Search.vue | ✅ | 搜索用户页 |
+| `/chat` | Chat.vue | ✅ | 聊天主页（含个人资料/搜索/通知侧面板） |
 
-**守卫逻辑**：未认证 → 跳登录（带 redirect）；已登录访问登录页 → 跳聊天。
+**守卫逻辑**：未认证 → 跳登录（带 redirect）；已登录访问登录页 → 跳聊天。个人资料和搜索功能通过 ChatSidePanel/ChatProfileCard 在页面内实现，无独立路由。
 
 ---
 
@@ -206,4 +220,4 @@ chat_frontend/
 
 ---
 
-**文档版本**: v2.0 | **最后更新**: 2026-06-10
+**文档版本**: v2.1 | **最后更新**: 2026-06-23

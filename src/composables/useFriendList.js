@@ -8,6 +8,8 @@
 import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import { getFriendList, getUnreadMessages } from '@/api/friend';
 import { getGroupList, getGroupNotifications } from '@/api/group';
+import { getLastReadAt, updateLastReadAt, computeIsRead } from '@/utils/notificationReadState';
+import { loadInteractedGroups, mergeInteractedGroups } from '@/utils/interactedGroups';
 import { wsManager } from '@/utils/websocket';
 
 // ==================== 群聊未读持久化 ====================
@@ -58,6 +60,8 @@ export function useFriendList(toast) {
   function toggleFriends() { friendsExpanded.value = !friendsExpanded.value; }
   function toggleGroups() { groupsExpanded.value = !groupsExpanded.value; }
   function toggleNotifications() { notificationsExpanded.value = !notificationsExpanded.value; }
+
+  /** 通知已读判断委托给 notificationReadState.computeIsRead */
 
   // ==================== 好友/群聊选择 ====================
   /**
@@ -173,10 +177,15 @@ export function useFriendList(toast) {
         groups.value = list.map(g => {
           const existing = groups.value.find(old => old.groupId === g.groupId);
           const cachedUnread = unreadCache[g.groupId] || 0;
+          // 格式化 lastMessage：若后端未拼接发送者名称前缀，且提供了 lastMessageSenderName，则补充
+          let formattedLastMessage = g.lastMessage || '';
+          if (formattedLastMessage && !formattedLastMessage.includes(': ') && g.lastMessageSenderName) {
+            formattedLastMessage = g.lastMessageSenderName + ': ' + formattedLastMessage;
+          }
           return {
             ...g,
             // 后端已返回这些字段（v1.9+），保留已有值作为降级，持久化兜底
-            lastMessage: g.lastMessage || existing?.lastMessage || '',
+            lastMessage: formattedLastMessage || existing?.lastMessage || '',
             lastMessageTime: g.lastMessageTime || existing?.lastMessageTime || '',
             unreadCount: g.unreadCount ?? existing?.unreadCount ?? cachedUnread,
           };
@@ -187,6 +196,10 @@ export function useFriendList(toast) {
           const tb = b.lastMessageTime || b.createDate || '';
           return tb.localeCompare(ta);
         });
+        // 同步到交互群列表，确保用户退出群聊后仍能查询历史通知
+        mergeInteractedGroups(groups.value);
+        // 同步群通知中的群名（WS 消息可能不含 groupName）
+        syncNotificationGroupNames();
       } else if (!silent) {
         toast.error(res.message || '加载群聊列表失败，请刷新重试');
       }
@@ -261,16 +274,29 @@ export function useFriendList(toast) {
 
   /**
    * 从后端 REST 加载群通知历史
-   * 遍历当前用户所在的所有群，拉取每群第一页通知历史，合并到 groupNotifications
-   * 已存在的通知（通过 _key 去重）不会重复添加，最多加载前 5 个群
+   * 遍历当前用户所在群 + 交互过的群（localStorage 持久化），拉取每群第一页通知历史
+   * 已存在的通知（通过 _key 去重）不会重复添加
    */
   async function loadGroupNotificationsHistory() {
-    const targetGroups = groups.value.slice(0, 5);
+    // 先同步当前群列表到 localStorage，确保持久化数据是最新的
+    mergeInteractedGroups(groups.value);
+    // 合并 groups 列表 + 交互过的群，去重后逐群查询
+    const interacted = loadInteractedGroups();
+    const groupMap = new Map();
+    for (const g of groups.value) {
+      groupMap.set(g.groupId, g.groupName);
+    }
+    for (const ig of interacted) {
+      if (!groupMap.has(ig.groupId)) {
+        groupMap.set(ig.groupId, ig.groupName);
+      }
+    }
+    const targetGroups = Array.from(groupMap, ([groupId, groupName]) => ({ groupId, groupName }));
     if (targetGroups.length === 0) {
-      console.log('[通知] 没有群聊，跳过通知历史加载');
+      console.log('[通知] 没有可查询的群，跳过通知历史加载');
       return;
     }
-    console.log('[通知] 为', targetGroups.length, '个群加载通知历史');
+    console.log('[通知] 为', targetGroups.length, '个群加载通知历史（含交互群），groups:', groups.value.length, 'interacted:', interacted.length);
     const existingKeys = new Set(groupNotifications.value.map(n => n._key));
     for (const g of targetGroups) {
       try {
@@ -282,27 +308,63 @@ export function useFriendList(toast) {
             const key = item.id ? `hist-notif-${item.id}` : `hist-notif-${g.groupId}-${item.sendTime}-${item.senderId}`;
             if (existingKeys.has(key)) continue;
             existingKeys.add(key);
+            // 规范化类型名：REST 返回 MEMBER_JOIN/MEMBER_LEAVE，WS 使用 GROUP_MEMBER_JOIN/GROUP_MEMBER_LEAVE
+            let rawType = item.type || item.notificationType || 'GROUP_MEMBER_JOIN';
+            if (rawType === 'MEMBER_JOIN') rawType = 'GROUP_MEMBER_JOIN';
+            else if (rawType === 'MEMBER_LEAVE') rawType = 'GROUP_MEMBER_LEAVE';
+
+            // 后端 REST 通知的 senderId/senderName 对于 JOIN 事件可能存的是群主而非实际成员，
+            // 保留原始值——JOIN 通知将以群聊视角展示（发送者=群聊，内容=谁加入了）
+            const content = item.content || item.message || '';
+            const rawSenderName = item.senderName || item.userName || '';
+
             groupNotifications.value.push({
               _key: key,
               _type: 'member-change',
-              type: item.type || item.notificationType || 'GROUP_MEMBER_JOIN',
+              type: rawType,
               groupId: g.groupId,
               groupName: g.groupName,
               senderId: item.senderId || item.userId || 0,
-              senderName: item.senderName || item.userName || '',
-              content: item.content || item.message || '',
+              senderName: rawSenderName,
+              content: content,
               sendTime: item.sendTime || item.createTime || new Date().toISOString(),
+              isRead: computeIsRead(item.sendTime || item.createTime || new Date().toISOString(), activeView.value === 'notifications-group'),
             });
             added++;
           }
           if (added > 0) console.log('[通知] 群「' + g.groupName + '」加载', added, '条历史通知');
+        } else if (res.code !== 200) {
+          console.warn('[通知] 群「' + g.groupName + '」通知历史查询返回 code:', res.code, res.message);
         }
       } catch (e) {
-        console.error('[通知] 加载群「' + g.groupName + '」通知历史失败:', e);
+        console.error('[通知] 加载群「' + g.groupName + '」通知历史失败:', e?.message || e);
       }
     }
     // 按时间降序重排
     groupNotifications.value.sort((a, b) => (b.sendTime || '').localeCompare(a.sendTime || ''));
+  }
+
+  /**
+   * 用当前 groups 列表同步 groupNotifications 中的群名
+   * 解决 WS 消息不含 groupName 导致显示「群聊x」的问题
+   */
+  function syncNotificationGroupNames() {
+    const groupMap = new Map();
+    for (const g of groups.value) {
+      groupMap.set(g.groupId, g.groupName);
+    }
+    let updated = false;
+    for (const n of groupNotifications.value) {
+      const freshName = groupMap.get(n.groupId);
+      if (freshName && n.groupName !== freshName) {
+        n.groupName = freshName;
+        updated = true;
+      }
+    }
+    if (updated) {
+      // 触发 Vue 响应式：替换数组引用
+      groupNotifications.value = [...groupNotifications.value];
+    }
   }
 
   /** 处理群成员加入/退出通知（存储通知 + 刷新群列表） */
@@ -321,6 +383,7 @@ export function useFriendList(toast) {
       senderId,
       senderName,
       sendTime,
+      isRead: computeIsRead(sendTime, activeView.value === 'notifications-group'),
     });
 
     // 限制最多保留 100 条
@@ -347,6 +410,7 @@ export function useFriendList(toast) {
       senderName,
       content: content || `「${groupName}」已被群主解散`,
       sendTime: sendTime || new Date().toISOString(),
+      isRead: computeIsRead(sendTime || new Date().toISOString(), activeView.value === 'notifications-group'),
     });
 
     if (groupNotifications.value.length > 100) {
@@ -377,6 +441,7 @@ export function useFriendList(toast) {
       targetUserId,
       content: content || `${senderName} 将群主转让给新群主`,
       sendTime: sendTime || new Date().toISOString(),
+      isRead: computeIsRead(sendTime || new Date().toISOString(), activeView.value === 'notifications-group'),
     });
 
     if (groupNotifications.value.length > 100) {
@@ -423,6 +488,13 @@ export function useFriendList(toast) {
     }
   });
 
+  /** 标记所有群聊通知为已读（更新 lastReadAt + 遍历数组） */
+  function markAllGroupNotificationsAsRead() {
+    const now = new Date().toISOString();
+    updateLastReadAt(now);
+    groupNotifications.value.forEach(n => { n.isRead = true; });
+  }
+
   return {
     // 状态
     friends,
@@ -446,5 +518,6 @@ export function useFriendList(toast) {
     loadGroups,
     fetchUnreadMessages,
     loadGroupNotificationsHistory,
+    markAllGroupNotificationsAsRead,
   };
 }

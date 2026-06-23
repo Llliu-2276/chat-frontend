@@ -24,7 +24,7 @@
         :groups-expanded="groupsExpanded"
         :notifications-expanded="notificationsExpanded"
         :pending-request-count="pendingRequestCount"
-        :group-notification-count="groupNotifications.length"
+        :group-notification-count="groupNotificationUnreadCount"
         :active-view="activeView"
         :mobile-show="mobileView === 'list'"
         :loading-friends="loadingFriends"
@@ -57,6 +57,7 @@
           :join-group-requests="joinGroupRequests"
           :initial-tab="notificationTab"
           :mobile-show="mobileView === 'chat'"
+          :current-user-id="userStore.userId"
           @handle-request="onHandleRequest"
           @handle-join-request="handleJoinRequestAction"
           @load-more="loadMoreRequests"
@@ -131,7 +132,9 @@
  *   - 定时器生命周期
  *   - WebSocket 连接初始化
  */
-import { ref, inject, onMounted, onBeforeUnmount } from 'vue';
+defineOptions({ name: 'Chat' });
+
+import { ref, computed, inject, onMounted, onBeforeUnmount } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import { wsManager } from '@/utils/websocket';
@@ -162,6 +165,7 @@ const {
   onSelectFriend: _selectFriend, onSelectGroup: _selectGroup,
   loadFriends, loadGroups, fetchUnreadMessages,
   loadGroupNotificationsHistory,
+  markAllGroupNotificationsAsRead,
 } = useFriendList(toast);
 
 // 消息区域组件模板 ref
@@ -185,7 +189,8 @@ const {
   _cleanupNotifications,
   addSelfJoinRequest,
   loadJoinRequestsHistory,
-} = useNotifications({ loadFriends, loadGroups, groups, activeView, chatTarget, mobileView, toast });
+  markAllJoinRequestsAsRead,
+} = useNotifications({ loadFriends, loadGroups, groups, activeView, chatTarget, mobileView, userId: userStore.userId, toast });
 
 const {
   showSidePanel, sidePanelMode, groupSubMode,
@@ -200,13 +205,20 @@ const {
 
 const {
   profileUser, profileContext, profileLoading,
-  isFriend, isGroupMember,
+  isGroupMember,
   handlePanelClose,
   openSelfProfile, onViewProfile, onViewGroupProfile,
   handleEditUsername, handleChangePassword, handleDeleteFriend,
   handleDissolveOrLeaveGroup,
   handleSendMessageTo: _sendMessageTo, handleAddFriendFromProfile: _addFriendFromProfile,
 } = useProfile({ toast, friends, groups, chatTarget, chatType, resetChat, closeSidePanel, loadFriends, loadGroups, sidePanelMode, groupSubMode, showSidePanel });
+
+// ==================== 群通知未读计数 ====================
+const groupNotificationUnreadCount = computed(() => {
+  const notifUnread = groupNotifications.value.filter(n => n.isRead === false).length;
+  const joinUnread = joinGroupRequests.value.filter(r => r.isRead === false && r.status === 0).length;
+  return notifUnread + joinUnread;
+});
 
 // ==================== 通知面板 Tab 控制 ====================
 const notificationTab = ref('friend');
@@ -218,6 +230,10 @@ function openFriendNotifications() {
 
 function openGroupNotifications() {
   notificationTab.value = 'group';
+  // 先标记所有现有通知为已读（更新 lastReadAt），再加载 REST 历史
+  // 这样 REST 加载的历史数据 sendTime <= lastReadAt，自动得到 isRead: true
+  markAllGroupNotificationsAsRead();
+  markAllJoinRequestsAsRead();
   // 直接设置 activeView，不走 openNotifications()（群聊通知不需要加载好友申请数据）
   activeView.value = 'notifications-group';
   chatTarget.value = null;
@@ -235,7 +251,9 @@ function openGroupNotifications() {
 function handleJoinRequestSent(data) {
   console.log('[Chat] 入群申请已发送，记录到通知列表:', data);
   addSelfJoinRequest(data);
-  // 自动切到群聊通知面板，让用户看到自己刚发出的申请
+  // 标记现有通知为已读，然后切换到群聊通知面板
+  markAllGroupNotificationsAsRead();
+  markAllJoinRequestsAsRead();
   notificationTab.value = 'group';
   activeView.value = 'notifications-group';
   chatTarget.value = null;

@@ -177,46 +177,64 @@ VITE_WS_URL = "/ws/chat"                      → 自动推导：
 
 | Composable | 管理的状态 | 说明 |
 |------------|-----------|------|
-| `useFriendList` | `friends`, `groups`, `chatTarget`, `chatType`, `mobileView`, `activeView`, 收展状态 | 好友列表、在线状态、未读轮询 |
-| `useChatMessages` | `messages`, `loadingMessages`, `loadingMore`, `isSending`, `hasMoreMessages`, `currentPage` | 消息收发、历史加载、WS 事件 |
-| `useNotifications` | `receivedRequests`, `sentRequests`, `pendingRequestCount`, `showSidePanel`, `sidePanelMode`, `panelSearch*` | 好友申请、侧面板、搜索 |
+| `useFriendList` | `friends`, `groups`, `chatTarget`, `chatType`, `mobileView`, `activeView`, `friendsExpanded`, `groupsExpanded`, `notificationsExpanded`, `groupNotifications` | 好友/群聊列表、在线状态、未读轮询、群聊 WS 事件 |
+| `useChatMessages` | `messages`, `loadingMessages`, `loadingMore`, `isSending`, `hasMoreMessages`, `currentPage` | 消息收发（WS 优先 + HTTP fallback）、历史分页加载 |
+| `useNotifications` | `receivedRequests`, `sentRequests`, `pendingRequestCount`, `joinGroupRequests`, 分页状态 | 好友申请流管理、入群申请流管理、WS 实时通知 |
+| `useSidePanel` | `showSidePanel`, `sidePanelMode`, `groupSubMode`, `panelSearchResults`, `panelSearching`, `groupSearchResults`, `groupSearching`, `sendingRequestIds`, `joiningGroupIds` | 侧面板 UI 状态、用户/群聊搜索（防抖）、发送好友申请 |
+| `useProfile` | `profileUser`, `profileContext`, `profileLoading`, `panelHistory` | 资料查看（用户/群聊）、用户名编辑、密码修改、删除好友、解散/退出群聊 |
 
 ### 7.2 编排模式
 
-Chat.vue 初始化三个 composable，通过解构获取状态和方法，再进行跨 composable 编排：
+Chat.vue 初始化 5 个 composable，通过解构获取状态和方法，再通过 wrapper 函数进行跨 composable 编排：
 
 ```js
-// 好友选择 → 跨 composable 编排
-async function onSelectFriend(friend) {
+// useProfile + useFriendList + useChatMessages 桥接
+function onSelectFriend(friend) {
   _selectFriend(friend);       // useFriendList
   resetChat();                 // useChatMessages
-  await loadChatHistory(false); // useChatMessages
+  loadChatHistory(false);      // useChatMessages
 }
+
+// useProfile → useSidePanel 桥接
+function handleAddFriendFromProfile(user) {
+  _addFriendFromProfile(user);  // useProfile
+  handleAddFriend(user);        // useSidePanel
+}
+
+// useSidePanel → useNotifications 回调桥接
+// Chat.vue 传入 onJoinRequestSent 回调给 useSidePanel，
+// 当用户发起入群申请时通过回调调用 useNotifications.addSelfJoinRequest()
 ```
 
-### 7.3 Profile 状态（Chat.vue 直接管理）
+### 7.3 Profile 状态（useProfile composable 管理）
 
-> 个人资料卡片相关状态由 Chat.vue 直接管理，不归属任一 composable。
+> 个人资料相关状态由 `useProfile` composable 管理，Chat.vue 通过解构获取。
 
-| 状态 | 类型 | 说明 |
-|------|------|------|
-| `profileUser` | `Ref<Object\|null>` | 当前查看的用户对象 |
-| `profileContext` | `Ref<string>` | `'self'` / `'friend'` / `'stranger'` |
-| `profileLoading` | `Ref<boolean>` | 修改用户名/密码操作加载中 |
+| 状态 | 类型 | 说明 | 管理者 |
+|------|------|------|--------|
+| `profileUser` | `Ref<Object\|null>` | 当前查看的用户/群聊对象 | useProfile |
+| `profileContext` | `Ref<string>` | `'self'` / `'friend'` / `'stranger'` / `'group'` | useProfile |
+| `profileLoading` | `Ref<boolean>` | 修改用户名/密码/解散/退出操作加载中 | useProfile |
+| `panelHistory` | `Array` | 面板历史栈（支持返回到上一个面板模式） | useProfile |
 
-**入口点**：
+**入口点**（均为 useProfile 的方法）：
 - 用户栏点击头像/用户名 → `openSelfProfile()` → context=`'self'`
 - 聊天头部点击好友头像 → `onViewProfile(user)` → context=`'friend'`
 - 搜索结果点击用户 → `onViewProfile(user)` → 自动判断 context（好友/陌生人）
+- 聊天头部点击群名 → `onViewGroupProfile(group)` → context=`'group'`
 
 **关键流程**：
-- 修改用户名：`ChatSidePanel` emit `edit-username` → `handleEditUsername()` → 调 API → `userStore.updateUserInfo()` 同步更新
-- 修改密码：`ChatSidePanel` emit `change-password` → `handleChangePassword()` → 调 API → 成功后 `clearUserState()` + 跳转登录页
-- 发消息（好友视角）：关闭面板 → `onSelectFriend(user)` 选中好友
+- 修改用户名：`ChatSidePanel` emit `edit-username` → Chat.vue → `useProfile.handleEditUsername()` → 调 API → `userStore.updateUserInfo()` 同步
+- 修改密码：`ChatSidePanel` emit `change-password` → Chat.vue → `useProfile.handleChangePassword()` → 调 API → 成功后 `clearUserState()` + 跳转登录页
+- 发消息（好友视角）：关闭面板 → Chat.vue `onSelectFriend(user)`
+- 发消息（群聊视角）：关闭面板 → Chat.vue `onSelectGroup(group)`
+- 面板返回导航：`useProfile.handlePanelClose()` 检查 `panelHistory` 栈 → 有历史则恢复上一个模式，否则关闭面板
 
-### 7.4 后续优化方向
+### 7.4 设计要点
 
-当需要跨路由共享聊天状态时，可将 composable 内部状态升级为 Pinia Store（如 `useChatStore`），当前 composable 模式已为升级做好准备。
+- **依赖注入**：Composable 通过参数接收依赖（toast、store、回调函数、外部 ref），避免循环引用
+- **独立生命周期**：WebSocket 事件注册/注销在 `onMounted`/`onBeforeUnmount` 中（例外：useNotifications 和 useSidePanel 使用 `_cleanup` 模式由 Chat.vue 统一管理）
+- **双 Handler 模式**：`PRIVATE_MESSAGE` 和 `GROUP_MESSAGE` 由 useChatMessages 和 useFriendList 各自注册独立 handler — 前者负责消息展示，后者负责侧边栏状态
 
 ---
 
@@ -245,4 +263,4 @@ if (result.success) { ... }
 
 ---
 
-**文档版本**: v1.2 | **最后更新**: 2026-06-16
+**文档版本**: v2.0 | **最后更新**: 2026-06-23

@@ -119,6 +119,7 @@ Authorization: Bearer {token}
 | `getReceivedRequests(params)` | GET | `/friends/request/received` | 查询收到的申请 `{status?, page?, size?}` |
 | `getSentRequests(params)` | GET | `/friends/request/sent` | 查询发出的申请 `{page?, size?}` |
 | `deleteFriend(friendId)` | DELETE | `/friends/remove/:friendId` | 删除好友 |
+| `recallMessage(recordId)` | POST | `/friends/message/:recordId/recall` | 撤回私聊消息（2分钟内，仅发送者） |
 
 ### 5.4 心跳模块（heartbeat.js）
 
@@ -142,6 +143,14 @@ Authorization: Bearer {token}
 | `handleJoinRequest(groupId, data)` | POST | `/group/:groupId/join-request/:requestId/handle` | 处理入群申请（群主） `{requestId, accept}` |
 | `getJoinRequests(groupId, params?)` | GET | `/group/:groupId/join-requests` | 查入群申请（群主看全部/用户看自己） |
 | `getGroupNotifications(groupId, params?)` | GET | `/group/:groupId/notifications` | 查群通知历史（成员变动等） |
+| `recallGroupMessage(groupId, recordId)` | POST | `/group/:groupId/message/:recordId/recall` | 撤回群聊消息（2分钟内，仅发送者） |
+| `markGroupRead(groupId, recordId)` | POST | `/group/:groupId/read/:recordId` | 标记群聊消息已读（最后已读消息ID方案） |
+| `getGroupUnreadCount(groupId)` | GET | `/group/:groupId/unread-count` | 获取群未读消息数 |
+| `transferGroupOwner(groupId, targetUserId)` | POST | `/group/:groupId/transfer/:targetUserId` | 转让群主（仅群主） |
+| `kickGroupMember(groupId, targetUserId)` | DELETE | `/group/:groupId/member/:targetUserId` | 踢出群成员（仅群主） |
+| `inviteToGroup(groupId, inviteeId, data?)` | POST | `/group/:groupId/invite/:inviteeId` | 邀请好友入群 `{message?}` |
+| `handleGroupInvite(groupId, inviteId, accept)` | POST | `/group/:groupId/invite/:inviteId/handle` | 处理入群邀请 `{accept}` |
+| `getReceivedInvites(params)` | GET | `/group/invites/received` | 查看收到的入群邀请 `{page, size}` |
 
 ---
 
@@ -219,6 +228,7 @@ wsManager.connect();
 | `PRIVATE_MESSAGE` | `receiverId`, `content` | 发送私聊消息 |
 | `GROUP_MESSAGE` | `groupId`, `content` | 发送群聊消息 |
 | `READ_RECEIPT` | `recordId` | 发送已读回执 |
+| `GROUP_READ_RECEIPT` | `groupId`, `recordId` | 发送群聊已读回执 |
 | `HEARTBEAT` | — | WebSocket 心跳 |
 
 **服务端推送：**
@@ -238,6 +248,7 @@ wsManager.connect();
 | `GROUP_OWNER_TRANSFERRED` | `groupId`, `senderId`, `senderName`, `targetUserId`, `content`, `sendTime` | 群主转让 |
 | `JOIN_GROUP_REQUEST` | `senderId`, `senderName`, `groupId`, `content`, `requestId`, `sendTime` | 收到入群申请（群主） |
 | `JOIN_GROUP_REQUEST_RESULT` | `senderId`, `senderName`, `groupId`, `groupName`, `content`(accepted\|rejected), `requestId`, `sendTime` | 入群申请结果（申请人） |
+| `MESSAGE_RECALL` | `senderId`, `senderName`, `recordId`, `receiverId?`, `groupId?`, `content`, `sendTime` | 消息撤回通知（私聊/群聊） |
 | `ERROR` | `error` | 错误通知 |
 
 ### 7.3 事件订阅

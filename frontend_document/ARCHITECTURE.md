@@ -124,7 +124,8 @@ chat_frontend/
 | 用户认证 | ✅ 已完成 | 登录、注册、登出、JWT Token 管理 |
 | 用户资料 | ✅ 已完成 | 通过 useProfile composable + ChatProfileCard 子组件（本人/好友/陌生人/群聊四种视角） |
 | 好友系统 | ✅ 已完成 | 好友列表、添加/删除好友、搜索用户 |
-| 消息收发 | ✅ 已完成 | WebSocket 优先 + REST 降级、乐观更新、已读回执 |
+| 消息收发 | ✅ 已完成 | WebSocket 优先 + REST 降级、乐观更新、已读回执、消息撤回（2分钟内右键） |
+| 群聊已读回执 | ✅ 已完成 | C→S GROUP_READ_RECEIPT + REST 未读数精准查询 |
 | 在线状态 | ✅ 已完成 | HTTP 心跳 + WebSocket 推送双重机制 |
 | 群聊系统 | ✅ 已完成 | 群列表、创建、消息收发（WS+HTTP）、群资料、成员管理、解散/退出/转让、入群申请 |
 

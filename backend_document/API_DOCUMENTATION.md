@@ -1,6 +1,6 @@
 # 📘 ChatBackend 前后端对接文档
 
-> **文档版本**: v2.8  
+> **文档版本**: v2.10  
 > **更新日期**: 2026-06-22  
 > **适用对象**: 前端开发工程师  
 > **后端技术栈**: Spring Boot 4.0.2 + JWT + Redis + MySQL
@@ -653,6 +653,7 @@ Authorization: Bearer {token}
 **注意事项**：
 - 在线状态从 Redis 实时获取
 - 如果用户暂无好友，返回空数组 `[]`
+- `lastMessage` 若对应消息已撤回，后端自动替换为"你撤回了一条消息"（发送者是当前用户）或"对方撤回了一条消息"（发送者是对面用户）
 
 ---
 
@@ -772,7 +773,8 @@ GET /api/friends/chat-history/2?page=1&size=20
         "receiverName": "张三",
         "content": "好的，明天见！",
         "sendTime": "2024-06-01T15:45:00",
-        "readStatus": true
+        "readStatus": true,
+        "isDeleted": false
       },
       {
         "recordId": 104,
@@ -782,7 +784,8 @@ GET /api/friends/chat-history/2?page=1&size=20
         "receiverName": "我",
         "content": "明天下午3点怎么样？",
         "sendTime": "2024-06-01T15:30:00",
-        "readStatus": true
+        "readStatus": true,
+        "isDeleted": false
       }
     ],
     "pageable": {
@@ -1438,7 +1441,7 @@ POST /api/friends/message/{recordId}/recall
 
 **注意事项**：
 - 仅消息发送者可撤回，超过2分钟无法撤回
-- 已撤回的消息不再出现在历史记录中
+- 已撤回的消息仍保留在历史记录中，`isDeleted` 字段为 `true`，前端可据此渲染撤回占位提示
 
 #### 3.5.12 搜索私聊消息
 
@@ -1560,6 +1563,7 @@ Authorization: Bearer {token}
 - 展示群聊卡片列表
 - 显示成员数量和群主名称
 - 根据isOwner显示不同操作按钮（群主可解散，非群主可退出）
+- `lastMessage` 若对应消息已撤回，后端自动替换为"xxx撤回了一条消息"（xxx为发送者昵称）
 
 ---
 
@@ -1816,7 +1820,8 @@ GET /api/group/history/1?page=1&size=20
         "senderName": "张三",
         "groupId": 1,
         "content": "大家好！",
-        "sendTime": "2026-06-15T14:30:00"
+        "sendTime": "2026-06-15T14:30:00",
+        "isDeleted": false
       },
       {
         "recordId": 2,
@@ -1824,7 +1829,8 @@ GET /api/group/history/1?page=1&size=20
         "senderName": "李四",
         "groupId": 1,
         "content": "你好！",
-        "sendTime": "2026-06-15T14:31:00"
+        "sendTime": "2026-06-15T14:31:00",
+        "isDeleted": false
       }
     ],
     "pageable": {
@@ -2074,21 +2080,51 @@ POST /api/group/{groupId}/transfer/{targetUserId}
 **响应**：`{"code":200, "message":"群主转让成功"}`
 **认证**：✅（仅群主）
 
-### 3.6.15 邀请好友入群
+### 3.6.15 邀请好友入群（需被邀请人同意）
 
 ```
 POST /api/group/{groupId}/invite/{inviteeId}
+Body (可选): { "message": "来这个群吧" }
 ```
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | groupId | Long | ✅ | 群组ID（路径） |
-| inviteeId | Long | ✅ | 被邀请人用户ID（路径） |
+| inviteeId | Long | ✅ | 被邀请人用户ID（路径，需为邀请人的好友） |
+| message | String | ❌ | 邀请附言（请求体，可选，最大200字符） |
 
-**响应**：`{"code":201, "message":"邀请好友入群成功", "data":{群聊信息VO}}`
+**响应**：`{"code":201, "message":"邀请已发送，等待对方确认"}`
 **认证**：✅（邀请人须是群成员且被邀请人须是好友）
+**流程**：邀请人发送邀请 → 被邀请人收到 WebSocket `GROUP_INVITE` 推送 → 被邀请人查看邀请列表 → 被邀请人同意/拒绝
 
-### 3.6.16 申请加入群聊（需审批）
+> ⚠️ **v2.10 变更**：邀请入群改为需被邀请人同意，不再直接入群。新增 `group_invite` 表持久化邀请记录。
+
+### 3.6.16 查看收到的入群邀请
+
+```
+GET /api/group/invites/received?page=1&size=20
+```
+
+**响应**：分页返回入群邀请，每项含 inviteId、groupId、groupName、inviterId、inviterName、message、status、statusDescription（待处理/已同意/已拒绝）、createTime、updateTime
+**认证**：✅
+
+### 3.6.17 处理入群邀请（被邀请人同意/拒绝）
+
+```
+POST /api/group/{groupId}/invite/{inviteId}/handle
+Body: { "accept": true }
+```
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| groupId | Long | ✅ | 群组ID（路径） |
+| inviteId | Long | ✅ | 邀请ID（路径） |
+| accept | Boolean | ✅ | 是否同意（请求体） |
+
+**响应**：同意 → `{"code":200, "message":"已接受入群邀请"}`；拒绝 → `{"code":200, "message":"已拒绝入群邀请"}`
+**流程**：被邀请人处理 → 同意则加入群聊 + 广播 `GROUP_MEMBER_JOIN` → 推送 `GROUP_INVITE_RESULT` 给邀请人
+
+### 3.6.18 申请加入群聊（需审批）
 
 ```
 POST /api/group/join/{groupId}
@@ -2100,13 +2136,14 @@ Body: { "message": "我想加入这个群" }
 | groupId | Long | ✅ | 群组ID（路径） |
 | message | String | ❌ | 申请留言（请求体，可选，最大200字符） |
 
-> ⚠️ **v2.1 变更**：加入群聊改为审批制，不再直接入群。好友邀请入群（3.6.14）不受影响，仍直接加入。  
-> ⚠️ **v2.7 变更**：message 参数由 URL 查询参数改为请求体传递，避免特殊字符 URL 编码截断。
+> ⚠️ **v2.1 变更**：加入群聊改为审批制，不再直接入群。  
+> ⚠️ **v2.7 变更**：message 参数由 URL 查询参数改为请求体传递，避免特殊字符 URL 编码截断。  
+> ⚠️ **v2.10 变更**：好友邀请入群（3.6.15）同样改为审批制（由被邀请人审批），不再直接加入。
 
 **响应**：`{"code":201, "message":"入群申请已发送，等待群主审批"}`
 **流程**：用户申请 → 群主收到 WebSocket `JOIN_GROUP_REQUEST` 推送 → 群主审批
 
-### 3.6.17 查看入群申请
+### 3.6.19 查看入群申请
 
 ```
 GET /api/group/{groupId}/join-requests?page=1&size=20
@@ -2115,7 +2152,7 @@ GET /api/group/{groupId}/join-requests?page=1&size=20
 **响应**：分页返回入群申请，每项含 applicantId/Name、message、status、statusDescription（待处理/已同意/已拒绝）、createTime  
 **认证**：✅（群主查看该群所有入群申请，不限状态；非群主只可查看自己在该群的入群申请）
 
-### 3.6.18 处理入群申请
+### 3.6.20 处理入群申请
 
 ```
 POST /api/group/{groupId}/join-request/{requestId}/handle
@@ -2125,7 +2162,7 @@ Body: { "requestId": 1, "accept": true }
 **响应**：`{"code":200, "message":"已同意入群申请"}` 或 `"...已拒绝入群申请"`  
 **认证**：✅（仅群主）
 
-### 3.6.19 撤回群聊消息
+### 3.6.21 撤回群聊消息
 
 ```
 POST /api/group/{groupId}/message/{recordId}/recall
@@ -2138,8 +2175,9 @@ POST /api/group/{groupId}/message/{recordId}/recall
 
 **响应**：`{"code":200, "message":"消息已撤回"}`
 **限制**：仅发送者可撤回，2分钟内
+**注意**：撤回后消息仍保留在历史记录中，`isDeleted` 字段为 `true`，前端可据此渲染撤回占位提示
 
-### 3.6.20 搜索群聊消息
+### 3.6.22 搜索群聊消息
 
 ```
 GET /api/group/history/{groupId}/search?keyword=你好&page=1&size=20
@@ -2148,7 +2186,7 @@ GET /api/group/history/{groupId}/search?keyword=你好&page=1&size=20
 **参数**：keyword（必需，≤50字符）、page、size  
 **响应**：分页返回含关键词的群聊消息
 
-### 3.6.21 群聊通知列表
+### 3.6.23 群聊通知列表
 
 ```
 GET /api/group/{groupId}/notifications?page=1&size=20
@@ -2272,7 +2310,9 @@ GET /api/user/blocked-list
 | `GET /api/group/{groupId}/unread-count` | GET | 群未读消息数 | ✅ 已实现 |
 | `DELETE /api/group/{groupId}/member/{targetUserId}` | DELETE | 踢出群成员（仅群主） | ✅ 已实现 |
 | `POST /api/group/{groupId}/transfer/{targetUserId}` | POST | 转让群主 | ✅ 已实现 |
-| `POST /api/group/{groupId}/invite/{inviteeId}` | POST | 邀请好友入群 | ✅ 已实现 |
+| `POST /api/group/{groupId}/invite/{inviteeId}` | POST | 邀请好友入群（需被邀请人同意） | ✅ 已实现 |
+| `GET /api/group/invites/received` | GET | 查看收到的入群邀请 | ✅ 已实现 |
+| `POST /api/group/{groupId}/invite/{inviteId}/handle` | POST | 处理入群邀请（被邀请人同意/拒绝） | ✅ 已实现 |
 | `GET /api/group/{groupId}/join-requests` | GET | 查看入群申请（群主看全部，用户看自己的） | ✅ 已实现 |
 | `POST /api/group/{groupId}/join-request/{requestId}/handle` | POST | 处理入群申请 | ✅ 已实现 |
 | `POST /api/group/{groupId}/message/{recordId}/recall` | POST | 撤回群聊消息（2分钟内） | ✅ 已实现 |
@@ -2655,7 +2695,7 @@ interface FriendMessageVO {
 }
 ```
 
-#### ChatRecordVO（聊天记录）
+#### ChatRecordVO（私聊记录）
 
 ```typescript
 interface ChatRecordVO {
@@ -2667,6 +2707,21 @@ interface ChatRecordVO {
   content: string;          // 消息内容
   sendTime: string;         // 发送时间 (YYYY-MM-DDTHH:mm:ss)
   readStatus: boolean;      // 是否已读
+  isDeleted: boolean;       // 是否已撤回（true时前端应渲染撤回占位）
+}
+```
+
+#### GroupMessageVO（群聊记录）
+
+```typescript
+interface GroupMessageVO {
+  recordId: number;         // 消息记录ID
+  senderId: number;         // 发送者用户ID
+  senderName: string;       // 发送者用户名
+  groupId: number;          // 群组ID
+  content: string;          // 消息内容
+  sendTime: string;         // 发送时间 (YYYY-MM-DDTHH:mm:ss)
+  isDeleted: boolean;       // 是否已撤回（true时前端应渲染撤回占位）
 }
 ```
 
@@ -3258,6 +3313,8 @@ async function safeApiCall(url, options) {
 | v2.6 | 2026-06-22 | Swagger UI 401拦截修复(SecurityConfig+JwtAuthenticationFilter放行)；文档汇总表与在线文档对齐(补录14个接口、删除1个、新增拉黑模块表) | 后端团队 |
 | v2.7 | 2026-06-23 | 入群留言改为请求体传递(JoinGroupDTO)；入群申请查询放宽(群主看全部/非群主看自己的)；群通知查询放宽(成员看全部/非成员看相关的) | 后端团队 |
 | v2.8 | 2026-06-23 | 群主查看入群申请不限状态(待处理/已同意/已拒绝)；新增WS消息类型JOIN_GROUP_REQUEST_RESULT(审批后推送给申请人) | 后端团队 |
+| v2.9 | 2026-06-23 | 撤回消息历史行为变更：历史/搜索查询不再过滤已撤回消息，VO新增isDeleted字段；好友/群列表最新消息预览对撤回消息替换为提示文本 | 后端团队 |
+| v2.10 | 2026-06-23 | 邀请入群改为被邀请人审批：新增group_invite表、GROUP_INVITE/GROUP_INVITE_RESULT消息类型；新增GET /invites/received和POST /invite/{inviteId}/handle端点 | 后端团队 |
 
 ---
 

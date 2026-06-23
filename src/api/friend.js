@@ -121,3 +121,15 @@ export function getSentRequests(params) {
   });
 }
 
+/**
+ * 撤回私聊消息（2分钟内，仅发送者）
+ * @param {number} recordId - 消息记录ID
+ * @returns {Promise} 返回撤回结果
+ */
+export function recallMessage(recordId) {
+  return request({
+    url: `/friends/message/${recordId}/recall`,
+    method: 'POST',
+  });
+}
+

@@ -102,9 +102,9 @@ main.js → userStore.initUserState()
 
 | Composable | 管理状态 | 关键职责 |
 |------------|---------|---------|
-| `useFriendList` | `friends`, `groups`, `chatTarget`, `chatType`, 展开/折叠状态 | 好友/群聊列表加载、在线状态更新、未读消息轮询、群聊 WS 事件 |
-| `useChatMessages` | `messages`, `loadingMessages`, `currentPage`, `hasMoreMessages` | 消息收发（WS 优先 + HTTP fallback）、历史加载、群聊消息 |
-| `useNotifications` | `receivedRequests`, `sentRequests`, 分页、`pendingRequestCount` | 好友申请流管理、申请处理、WS 实时通知 |
+| `useFriendList` | `friends`, `groups`, `chatTarget`, `chatType`, 展开/折叠状态 | 好友/群聊列表加载、在线状态更新、未读消息轮询、群聊 WS 事件、侧边栏撤回消息更新、服务端未读计数查询 |
+| `useChatMessages` | `messages`, `loadingMessages`, `currentPage`, `hasMoreMessages` | 消息收发（WS 优先 + HTTP fallback）、历史加载、群聊消息、消息撤回（乐观更新 + API + WS handler） |
+| `useNotifications` | `receivedRequests`, `sentRequests`, 分页、`pendingRequestCount`、`joinGroupRequests`、`groupInvites` | 好友申请流管理、入群申请流管理、入群邀请流管理（WS + REST 历史加载）、WS 实时通知（含 `GROUP_INVITE` / `GROUP_INVITE_RESULT`） |
 | `useSidePanel` | `showSidePanel`, `sidePanelMode`, `groupSubMode`, 搜索状态, `sendingRequestIds` | 侧面板 UI 状态、用户搜索（防抖）、发送好友申请、创建群聊 |
 | `useProfile` | `profileUser`, `profileContext`, `profileLoading`, `panelHistory` | 资料查看（用户/群聊）、用户名编辑、密码修改、删除好友、解散/退出群聊 |
 
@@ -179,7 +179,7 @@ VITE_WS_URL = "/ws/chat"                      → 自动推导：
 |------------|-----------|------|
 | `useFriendList` | `friends`, `groups`, `chatTarget`, `chatType`, `mobileView`, `activeView`, `friendsExpanded`, `groupsExpanded`, `notificationsExpanded`, `groupNotifications` | 好友/群聊列表、在线状态、未读轮询、群聊 WS 事件 |
 | `useChatMessages` | `messages`, `loadingMessages`, `loadingMore`, `isSending`, `hasMoreMessages`, `currentPage` | 消息收发（WS 优先 + HTTP fallback）、历史分页加载 |
-| `useNotifications` | `receivedRequests`, `sentRequests`, `pendingRequestCount`, `joinGroupRequests`, 分页状态 | 好友申请流管理、入群申请流管理、WS 实时通知 |
+| `useNotifications` | `receivedRequests`, `sentRequests`, `pendingRequestCount`, `joinGroupRequests`, `groupInvites`, 分页状态 | 好友申请流管理、入群申请流管理、入群邀请流管理（WS + REST 历史加载）、WS 实时通知（含 `GROUP_INVITE` / `GROUP_INVITE_RESULT`） |
 | `useSidePanel` | `showSidePanel`, `sidePanelMode`, `groupSubMode`, `panelSearchResults`, `panelSearching`, `groupSearchResults`, `groupSearching`, `sendingRequestIds`, `joiningGroupIds` | 侧面板 UI 状态、用户/群聊搜索（防抖）、发送好友申请 |
 | `useProfile` | `profileUser`, `profileContext`, `profileLoading`, `panelHistory` | 资料查看（用户/群聊）、用户名编辑、密码修改、删除好友、解散/退出群聊 |
 
@@ -234,7 +234,7 @@ function handleAddFriendFromProfile(user) {
 
 - **依赖注入**：Composable 通过参数接收依赖（toast、store、回调函数、外部 ref），避免循环引用
 - **独立生命周期**：WebSocket 事件注册/注销在 `onMounted`/`onBeforeUnmount` 中（例外：useNotifications 和 useSidePanel 使用 `_cleanup` 模式由 Chat.vue 统一管理）
-- **双 Handler 模式**：`PRIVATE_MESSAGE` 和 `GROUP_MESSAGE` 由 useChatMessages 和 useFriendList 各自注册独立 handler — 前者负责消息展示，后者负责侧边栏状态
+- **双 Handler 模式**：`PRIVATE_MESSAGE`、`GROUP_MESSAGE` 和 `MESSAGE_RECALL` 由 useChatMessages 和 useFriendList 各自注册独立 handler — 前者负责消息展示，后者负责侧边栏状态
 
 ---
 

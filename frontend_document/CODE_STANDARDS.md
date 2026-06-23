@@ -323,7 +323,7 @@ onBeforeUnmount(() => {
 
 ### 5.3 双 Handler 模式
 
-`PRIVATE_MESSAGE` 和 `GROUP_MESSAGE` 在 `useChatMessages` 和 `useFriendList` 中**各自独立注册** —— 这是刻意的设计模式。修改时需要确保两侧逻辑一致性（如 unread count 的清理/累加逻辑必须相同）。详见 `CLAUDE.md` 中的 "Dual-Handler Pattern" 说明。
+`PRIVATE_MESSAGE`、`GROUP_MESSAGE` 和 `MESSAGE_RECALL` 在 `useChatMessages` 和 `useFriendList` 中**各自独立注册** —— 这是刻意的设计模式。修改时需要确保两侧逻辑一致性（如 unread count 的清理/累加逻辑必须相同，撤回时气泡展示和侧边栏 lastMessage 需同步更新）。详见 `CLAUDE.md` 中的 "Dual-Handler Pattern" 说明。
 
 ### 5.4 消息发送规范
 

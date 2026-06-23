@@ -98,7 +98,8 @@ Token 从登录接口获取，放在 URL 查询参数中。
 - 收到 `READ_RECEIPT` 时，将对应私聊消息标记为已读
 - 收到 `GROUP_MESSAGE` 时，将消息追加到对应群聊天列表
 - 收到 `GROUP_MEMBER_JOIN` / `GROUP_MEMBER_LEAVE` 时，更新群成员列表
-- 收到 `MESSAGE_RECALL` 时，将对应消息替换为"消息已被撤回"文本（私聊通过 receiverId+recordId 定位，群聊通过 groupId+recordId 定位）
+- 收到 `MESSAGE_RECALL` 时，将对应消息标记为已撤回（私聊通过 receiverId+recordId 定位，群聊通过 groupId+recordId 定位）。实时更新UI，无需重新拉取历史
+- REST 历史消息接口现在也返回 `isDeleted` 字段，刷新页面后前端可据此渲染撤回占位，与 WebSocket 实时通知保持一致
 - 收到 `GROUP_OWNER_TRANSFERRED` 时，更新群主信息（senderId=旧群主，targetUserId=新群主）
 - 收到 `JOIN_GROUP_REQUEST` 时（群主端），弹出入群申请提示，刷新申请列表
 - 收到 `JOIN_GROUP_REQUEST_RESULT` 时（申请人端），根据 content 字段（accepted/rejected）更新申请状态并 toast 通知

@@ -33,7 +33,17 @@
     <div class="profile-member-section">
       <div class="profile-member-header">
         <span class="profile-member-title">群成员</span>
-        <span class="profile-member-count">{{ sortedMembers.length }} 人</span>
+        <div class="profile-member-header-right">
+          <span class="profile-member-count">{{ sortedMembers.length }} 人</span>
+          <button class="profile-invite-btn" @click="$emit('open-invite', profileUser)" title="邀请好友入群">
+            <el-icon><Plus /></el-icon>
+            <span>邀请好友</span>
+          </button>
+        </div>
+      </div>
+      <!-- 选择模式提示 -->
+      <div v-if="selectMode" class="profile-select-hint">
+        {{ selectMode === 'transfer' ? '选择要转让群主的成员' : '选择要踢出的成员' }}
       </div>
       <div v-if="loadingMembers" class="profile-member-loading">
         <span class="loading-icon"><img src="@/assets/loading.png" alt="Loading"></span>
@@ -41,7 +51,11 @@
       </div>
       <div v-else class="profile-member-list">
         <div v-for="m in sortedMembers" :key="'pm-' + m.userId" class="profile-member-item"
-             :class="{ 'is-owner': m.isOwner }">
+             :class="{ 'is-owner': m.isOwner, 'is-selectable': selectMode && !m.isOwner }"
+             @click="selectMode && !m.isOwner && (selectedMemberId = m.userId)">
+          <el-radio v-if="selectMode && !m.isOwner"
+                    v-model="selectedMemberId" :value="m.userId" class="profile-member-radio"
+                    @click.stop />
           <div class="profile-member-avatar avatar avatar-sm"
                :style="{ background: m.isOwner ? 'linear-gradient(135deg, #f5af19, #f12711)' : 'linear-gradient(135deg, #11998e, #38ef7d)' }">
             {{ (m.userName || '?').charAt(0) }}
@@ -52,12 +66,31 @@
           </div>
         </div>
       </div>
+      <!-- 选择模式操作栏 -->
+      <div v-if="selectMode" class="profile-select-actions">
+        <button class="profile-select-cancel-btn" @click="cancelSelectMode">取消</button>
+        <button class="submit-button" style="width:auto;padding:6px 20px;font-size:12px"
+                :disabled="!selectedMemberId" @click="confirmSelectAction">
+          确认{{ selectMode === 'transfer' ? '转让' : '踢出' }}
+        </button>
+      </div>
     </div>
 
     <button class="submit-button profile-action-btn" @click="$emit('send-message-to', profileUser)">
       <el-icon><ChatDotRound /></el-icon>
       发消息
     </button>
+    <!-- 群主管理操作 -->
+    <div v-if="profileUser?.isOwner" class="profile-owner-actions">
+      <button class="profile-owner-action-btn" @click="enterSelectMode('transfer')">
+        <el-icon><Switch /></el-icon>
+        <span>转让群主</span>
+      </button>
+      <button class="profile-owner-action-btn profile-owner-action-btn--danger" @click="enterSelectMode('kick')">
+        <el-icon><Remove /></el-icon>
+        <span>踢出成员</span>
+      </button>
+    </div>
     <button v-if="profileUser?.isOwner" class="btn-danger" style="width:100%;padding:10px;font-size:14px"
             @click="$emit('dissolve-or-leave-group', profileUser)">
       <el-icon><Delete /></el-icon>
@@ -95,7 +128,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { ChatDotRound, Delete, Plus } from '@element-plus/icons-vue';
+import { ChatDotRound, Delete, Plus, Switch, Remove } from '@element-plus/icons-vue';
 import { getGroupInfo, getGroupMembers } from '@/api/group';
 
 defineOptions({ name: 'ProfileGroup' });
@@ -104,7 +137,33 @@ const props = defineProps({
   profileUser: { type: Object, default: null },
   isGroupMember: { type: Boolean, default: false },
 });
-const emit = defineEmits(['send-message-to', 'dissolve-or-leave-group', 'join-group']);
+const emit = defineEmits(['send-message-to', 'dissolve-or-leave-group', 'join-group', 'transfer-owner', 'kick-member', 'open-invite']);
+
+// ==================== 选择模式（转让/踢出） ====================
+const selectMode = ref(null); // 'transfer' | 'kick' | null
+const selectedMemberId = ref(null);
+
+function enterSelectMode(mode) {
+  selectMode.value = mode;
+  selectedMemberId.value = null;
+}
+
+function cancelSelectMode() {
+  selectMode.value = null;
+  selectedMemberId.value = null;
+}
+
+function confirmSelectAction() {
+  if (!selectedMemberId.value) return;
+  const member = members.value.find(m => m.userId === selectedMemberId.value);
+  if (!member) return;
+  if (selectMode.value === 'transfer') {
+    emit('transfer-owner', member);
+  } else if (selectMode.value === 'kick') {
+    emit('kick-member', member);
+  }
+  cancelSelectMode();
+}
 
 // ==================== 成员列表 ====================
 const members = ref([]);
@@ -245,5 +304,122 @@ watch(() => props.profileUser?.groupId, (newId) => {
   color: #fff;
   flex-shrink: 0;
   letter-spacing: 0.5px;
+}
+
+/* ==================== 成员列表头部（含邀请按钮） ==================== */
+.profile-member-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.profile-invite-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #11998e;
+  background: rgba(17, 153, 142, 0.1);
+  border: 1px solid rgba(17, 153, 142, 0.25);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.profile-invite-btn:hover {
+  background: rgba(17, 153, 142, 0.18);
+  border-color: rgba(17, 153, 142, 0.4);
+}
+
+/* ==================== 选择模式 ==================== */
+.profile-select-hint {
+  padding: 6px 14px;
+  font-size: 12px;
+  color: #f5af19;
+  background: rgba(245, 175, 25, 0.08);
+  border-bottom: 1px solid rgba(245, 175, 25, 0.15);
+}
+
+.profile-member-item.is-selectable {
+  cursor: pointer;
+}
+
+.profile-member-item.is-selectable:hover {
+  background: rgba(17, 153, 142, 0.1);
+}
+
+.profile-member-radio {
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+
+.profile-select-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.profile-select-cancel-btn {
+  padding: 6px 16px;
+  font-size: 12px;
+  color: #999;
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.profile-select-cancel-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: #666;
+}
+
+/* ==================== 群主管理操作按钮 ==================== */
+.profile-owner-actions {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.profile-owner-action-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #11998e;
+  background: rgba(17, 153, 142, 0.1);
+  border: 1.5px solid rgba(17, 153, 142, 0.3);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.profile-owner-action-btn:hover {
+  background: rgba(17, 153, 142, 0.18);
+  border-color: rgba(17, 153, 142, 0.5);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(17, 153, 142, 0.15);
+}
+
+.profile-owner-action-btn--danger {
+  color: #e05353;
+  background: rgba(224, 83, 83, 0.08);
+  border-color: rgba(224, 83, 83, 0.25);
+}
+
+.profile-owner-action-btn--danger:hover {
+  background: rgba(224, 83, 83, 0.16);
+  border-color: rgba(224, 83, 83, 0.45);
+  box-shadow: 0 2px 8px rgba(224, 83, 83, 0.15);
 }
 </style>

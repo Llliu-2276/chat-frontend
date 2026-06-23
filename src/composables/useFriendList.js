@@ -7,7 +7,7 @@
  */
 import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import { getFriendList, getUnreadMessages } from '@/api/friend';
-import { getGroupList, getGroupNotifications } from '@/api/group';
+import { getGroupList, getGroupNotifications, getGroupUnreadCount } from '@/api/group';
 import { getLastReadAt, updateLastReadAt, computeIsRead } from '@/utils/notificationReadState';
 import { loadInteractedGroups, mergeInteractedGroups } from '@/utils/interactedGroups';
 import { wsManager } from '@/utils/websocket';
@@ -85,6 +85,13 @@ export function useFriendList(toast) {
     chatType.value = 'group';
     activeView.value = 'chat';
     mobileView.value = 'chat';
+    // 从服务器获取精确未读数，减少 localStorage 缓存依赖
+    getGroupUnreadCount(group.groupId).then(res => {
+      if (res.code === 200 && res.data != null) {
+        const g = groups.value.find(x => x.groupId === group.groupId);
+        if (g) { g.unreadCount = res.data; saveGroupUnreadCache(groups.value); }
+      }
+    }).catch(() => { /* 静默失败，localStorage 缓存兜底 */ });
   }
 
   // ==================== 数据加载 ====================
@@ -273,6 +280,26 @@ export function useFriendList(toast) {
   }
 
   /**
+   * 构建群主转让通知文案：「新群主名」成为「群名」的新群主
+   * WS content 格式通常为 "李四 成为新群主"，从中提取新群主名
+   * @param {string} content - WS 消息中的 content 字段
+   * @param {string} groupName - 群聊名称
+   * @returns {string}
+   */
+  function buildTransferContent(content, groupName) {
+    if (content) {
+      // 尝试从 content 中提取新群主名字（格式如 "李四 成为新群主"）
+      const match = content.match(/^(.+?)\s*成为新群主/);
+      if (match) {
+        return `「${match[1]}」成为「${groupName}」的新群主`;
+      }
+      // 提取失败，直接用原始 content 拼接
+      return `「${content}」-「${groupName}」`;
+    }
+    return `「${groupName}」群主已变更`;
+  }
+
+  /**
    * 从后端 REST 加载群通知历史
    * 遍历当前用户所在群 + 交互过的群（localStorage 持久化），拉取每群第一页通知历史
    * 已存在的通知（通过 _key 去重）不会重复添加
@@ -307,16 +334,35 @@ export function useFriendList(toast) {
           for (const item of list) {
             const key = item.id ? `hist-notif-${item.id}` : `hist-notif-${g.groupId}-${item.sendTime}-${item.senderId}`;
             if (existingKeys.has(key)) continue;
-            existingKeys.add(key);
-            // 规范化类型名：REST 返回 MEMBER_JOIN/MEMBER_LEAVE，WS 使用 GROUP_MEMBER_JOIN/GROUP_MEMBER_LEAVE
+            // 规范化类型名：REST 返回 MEMBER_JOIN/MEMBER_LEAVE/OWNER_TRANSFERRED/DISBANDED，
+            // WS 使用 GROUP_MEMBER_JOIN/GROUP_MEMBER_LEAVE/GROUP_OWNER_TRANSFERRED/GROUP_DISBANDED
             let rawType = item.type || item.notificationType || 'GROUP_MEMBER_JOIN';
             if (rawType === 'MEMBER_JOIN') rawType = 'GROUP_MEMBER_JOIN';
             else if (rawType === 'MEMBER_LEAVE') rawType = 'GROUP_MEMBER_LEAVE';
+            else if (rawType === 'OWNER_TRANSFERRED') rawType = 'GROUP_OWNER_TRANSFERRED';
+            else if (rawType === 'DISBANDED') rawType = 'GROUP_DISBANDED';
 
-            // 后端 REST 通知的 senderId/senderName 对于 JOIN 事件可能存的是群主而非实际成员，
-            // 保留原始值——JOIN 通知将以群聊视角展示（发送者=群聊，内容=谁加入了）
+            // 二次去重：WS 可能已插入同群同类型通知（后端对同一次操作推送多条 WS），
+            // 避免 REST 加载时再次重复（与 WS handler 中的去重策略一致）
+            if (rawType === 'GROUP_MEMBER_JOIN' || rawType === 'GROUP_MEMBER_LEAVE' || rawType === 'GROUP_OWNER_TRANSFERRED') {
+              if (groupNotifications.value.some(n => n.type === rawType && n.groupId === g.groupId)) {
+                continue;
+              }
+            }
+            existingKeys.add(key);
+
+            // 后端 REST 通知的 senderId/senderName 对于 JOIN/LEAVE 事件可能存的是操作者（群主）而非实际成员
+            // - JOIN：群聊视角展示（发送者=群聊，内容=谁加入了），模板中优先取 content 降级取 senderName
+            // - LEAVE：senderId 可能是踢人者（群主），实际退出者是 targetUserId
+            //   优先用 targetUserId/targetUserName，确保 isSelfLeave 判断正确且气泡显示被踢者名字
             const content = item.content || item.message || '';
-            const rawSenderName = item.senderName || item.userName || '';
+            let rawSenderId = item.senderId || item.userId || 0;
+            let rawSenderName = item.senderName || item.userName || '';
+
+            if (rawType === 'GROUP_MEMBER_LEAVE' && item.targetUserId && item.targetUserName) {
+              rawSenderId = item.targetUserId;
+              rawSenderName = item.targetUserName;
+            }
 
             groupNotifications.value.push({
               _key: key,
@@ -324,7 +370,7 @@ export function useFriendList(toast) {
               type: rawType,
               groupId: g.groupId,
               groupName: g.groupName,
-              senderId: item.senderId || item.userId || 0,
+              senderId: rawSenderId,
               senderName: rawSenderName,
               content: content,
               sendTime: item.sendTime || item.createTime || new Date().toISOString(),
@@ -373,6 +419,16 @@ export function useFriendList(toast) {
     const { type, groupId, senderId, senderName } = msg;
     const sendTime = msg.sendTime || new Date().toISOString();
     const groupName = msg.groupName || resolveGroupName(groupId);
+
+    // 去重：后端可能对同一次操作推送多条 WS（senderId 可能不同——例如
+    // JOIN 事件一条 senderId=加入者、另一条 senderId=邀请者）
+    // 按 type + groupId 去重（同群同类型事件在短时间内视为同一次操作），与转让通知去重策略一致
+    const dupIdx = groupNotifications.value.findIndex(
+      n => n.type === type && n.groupId === groupId
+    );
+    if (dupIdx !== -1) {
+      groupNotifications.value.splice(dupIdx, 1);
+    }
 
     // 存储到群聊通知列表（最新在上方）
     groupNotifications.value.unshift({
@@ -430,18 +486,27 @@ export function useFriendList(toast) {
     console.log('[通知] 收到 WS GROUP_OWNER_TRANSFERRED:', JSON.stringify(msg));
     const { groupId, senderId, senderName, targetUserId, content, sendTime } = msg;
     const groupName = resolveGroupName(groupId);
+    const ts = sendTime || new Date().toISOString();
+
+    // 去重：同一次转让后端可能推送多条 WS，移除旧通知后插入最新
+    const dupIdx = groupNotifications.value.findIndex(
+      n => n.type === 'GROUP_OWNER_TRANSFERRED' && n.groupId === groupId
+    );
+    if (dupIdx !== -1) {
+      groupNotifications.value.splice(dupIdx, 1);
+    }
 
     groupNotifications.value.unshift({
-      _key: `grp-transfer-${Date.now()}-${groupId}`,
+      _key: `grp-transfer-${groupId}`,
       type: 'GROUP_OWNER_TRANSFERRED',
       groupId,
       groupName,
       senderId,
       senderName,
       targetUserId,
-      content: content || `${senderName} 将群主转让给新群主`,
-      sendTime: sendTime || new Date().toISOString(),
-      isRead: computeIsRead(sendTime || new Date().toISOString(), activeView.value === 'notifications-group'),
+      content: buildTransferContent(content, groupName),
+      sendTime: ts,
+      isRead: computeIsRead(ts, activeView.value === 'notifications-group'),
     });
 
     if (groupNotifications.value.length > 100) {
@@ -450,6 +515,32 @@ export function useFriendList(toast) {
 
     toast.info(content || `「${groupName}」群主已变更`);
     loadGroups({ silent: true });
+  }
+
+  /**
+   * 处理消息撤回通知（仅更新侧边栏 lastMessage）
+   * @param {Object} msg - MESSAGE_RECALL WS 消息
+   */
+  function handleWsMessageRecall(msg) {
+    const { senderId, senderName, recordId, receiverId, groupId, sendTime } = msg;
+    const displayText = senderName + '撤回了一条消息';
+
+    if (groupId) {
+      // 群聊撤回 → 更新群列表 lastMessage
+      const group = groups.value.find(g => g.groupId === groupId);
+      if (group && (!group.lastMessageTime || sendTime >= group.lastMessageTime)) {
+        group.lastMessage = displayText;
+        group.lastMessageTime = sendTime;
+      }
+    } else if (receiverId) {
+      // 私聊撤回 → 更新好友列表 lastMessage
+      const friendId = senderId === chatTarget.value?.userId ? senderId : receiverId;
+      const friend = friends.value.find(f => f.userId === friendId);
+      if (friend && (!friend.lastMessageTime || sendTime >= friend.lastMessageTime)) {
+        friend.lastMessage = displayText;
+        friend.lastMessageTime = sendTime;
+      }
+    }
   }
 
   // ==================== WebSocket 生命周期 ====================
@@ -462,6 +553,7 @@ export function useFriendList(toast) {
     wsManager.on('GROUP_MEMBER_LEAVE', handleWsGroupMemberChange);
     wsManager.on('GROUP_DISBANDED', handleWsGroupDisbanded);
     wsManager.on('GROUP_OWNER_TRANSFERRED', handleWsGroupOwnerTransferred);
+    wsManager.on('MESSAGE_RECALL', handleWsMessageRecall);
   });
 
   onBeforeUnmount(() => {
@@ -473,6 +565,7 @@ export function useFriendList(toast) {
     wsManager.off('GROUP_MEMBER_LEAVE', handleWsGroupMemberChange);
     wsManager.off('GROUP_DISBANDED', handleWsGroupDisbanded);
     wsManager.off('GROUP_OWNER_TRANSFERRED', handleWsGroupOwnerTransferred);
+    wsManager.off('MESSAGE_RECALL', handleWsMessageRecall);
   });
 
   // ==================== 侦听器 ====================

@@ -28,6 +28,9 @@
         :active-view="activeView"
         :mobile-show="mobileView === 'list'"
         :loading-friends="loadingFriends"
+        :invite-mode="inviteMode"
+        :invite-group-name="inviteTargetName"
+        :invite-group-member-ids="inviteGroupMemberIds"
         @select-friend="onSelectFriend"
         @select-group="onSelectGroup"
         @toggle-friends="toggleFriends"
@@ -39,6 +42,8 @@
         @open-notifications="openFriendNotifications"
         @open-group-notifications="openGroupNotifications"
         @open-profile="openSelfProfile"
+        @confirm-invite="handleConfirmInvite"
+        @cancel-invite="cancelInviteMode"
       />
 
       <!-- 聊天消息区 / 通知面板（条件渲染） -->
@@ -55,11 +60,13 @@
           :pending-count="pendingRequestCount"
           :group-notifications="groupNotifications"
           :join-group-requests="joinGroupRequests"
+          :group-invites="groupInvites"
           :initial-tab="notificationTab"
           :mobile-show="mobileView === 'chat'"
           :current-user-id="userStore.userId"
           @handle-request="onHandleRequest"
           @handle-join-request="handleJoinRequestAction"
+          @handle-group-invite="onHandleGroupInvite"
           @load-more="loadMoreRequests"
           @back-to-list="mobileView = 'list'"
           @view-profile="onViewProfile"
@@ -77,10 +84,12 @@
           :loading-more="loadingMore"
           :has-more-messages="hasMoreMessages"
           :mobile-show="mobileView === 'chat'"
+          :dimmed="inviteMode"
           @send="onSendMessage"
           @scroll-top="handleScroll"
           @back-to-list="mobileView = 'list'"
           @view-profile="viewProfile"
+          @recall-message="onRecallMessage"
           ref="messageAreaRef"
         />
       </template>
@@ -103,6 +112,7 @@
         :profile-context="profileContext"
         :profile-loading="profileLoading"
         :is-group-member="isGroupMember"
+        :dimmed="inviteMode"
         @close="handlePanelClose"
         @search="handlePanelSearch"
         @add-friend="handleAddFriend"
@@ -116,6 +126,9 @@
         @add-friend-from-profile="handleAddFriendFromProfile"
         @delete-friend="handleDeleteFriend"
         @dissolve-or-leave-group="handleDissolveOrLeaveGroup"
+        @transfer-owner="(group, member) => handleTransferOwner(group, member)"
+        @kick-member="(group, member) => handleKickMember(group, member)"
+        @open-invite="openInviteFromProfile"
         @view-profile="viewProfile"
         @logout="handleLogout"
       />
@@ -146,6 +159,7 @@ import ChatSidePanel from '@/components/chat/ChatSidePanel.vue';
 import ChatNotificationPanel from '@/components/chat/ChatNotificationPanel.vue';
 
 import { useFriendList } from '@/composables/useFriendList';
+import { inviteToGroup, getGroupMembers } from '@/api/group';
 import { useChatMessages } from '@/composables/useChatMessages';
 import { useNotifications } from '@/composables/useNotifications';
 import { useSidePanel } from '@/composables/useSidePanel';
@@ -173,7 +187,7 @@ const messageAreaRef = ref(null);
 
 const {
   messages, loadingMessages, loadingMore, isSending, hasMoreMessages,
-  resetChat, loadChatHistory, onSendMessage, handleScroll,
+  resetChat, loadChatHistory, onSendMessage, handleScroll, recallMessage,
 } = useChatMessages(chatTarget, chatType, friends, messageAreaRef, userStore, toast);
 
 const {
@@ -183,6 +197,7 @@ const {
   hasMoreReceived, hasMoreSent,
   pendingRequestCount,
   joinGroupRequests,
+  groupInvites,
   openNotifications,
   loadMoreReceived, loadMoreSent,
   onHandleRequest, handleJoinRequestAction,
@@ -190,6 +205,9 @@ const {
   addSelfJoinRequest,
   loadJoinRequestsHistory,
   markAllJoinRequestsAsRead,
+  loadGroupInvitesHistory,
+  markAllGroupInvitesAsRead,
+  onHandleGroupInvite,
 } = useNotifications({ loadFriends, loadGroups, groups, activeView, chatTarget, mobileView, userId: userStore.userId, toast });
 
 const {
@@ -210,6 +228,7 @@ const {
   openSelfProfile, onViewProfile, onViewGroupProfile,
   handleEditUsername, handleChangePassword, handleDeleteFriend,
   handleDissolveOrLeaveGroup,
+  handleTransferOwner, handleKickMember,
   handleSendMessageTo: _sendMessageTo, handleAddFriendFromProfile: _addFriendFromProfile,
 } = useProfile({ toast, friends, groups, chatTarget, chatType, resetChat, closeSidePanel, loadFriends, loadGroups, sidePanelMode, groupSubMode, showSidePanel });
 
@@ -217,7 +236,8 @@ const {
 const groupNotificationUnreadCount = computed(() => {
   const notifUnread = groupNotifications.value.filter(n => n.isRead === false).length;
   const joinUnread = joinGroupRequests.value.filter(r => r.isRead === false && r.status === 0).length;
-  return notifUnread + joinUnread;
+  const inviteUnread = groupInvites.value.filter(i => i.isRead === false).length;
+  return notifUnread + joinUnread + inviteUnread;
 });
 
 // ==================== 通知面板 Tab 控制 ====================
@@ -234,13 +254,15 @@ function openGroupNotifications() {
   // 这样 REST 加载的历史数据 sendTime <= lastReadAt，自动得到 isRead: true
   markAllGroupNotificationsAsRead();
   markAllJoinRequestsAsRead();
+  markAllGroupInvitesAsRead();
   // 直接设置 activeView，不走 openNotifications()（群聊通知不需要加载好友申请数据）
   activeView.value = 'notifications-group';
   chatTarget.value = null;
   mobileView.value = 'chat';
-  // 补充加载 REST 历史数据（入群申请 + 群通知），弥补实时 WS 推送的不足
+  // 补充加载 REST 历史数据（入群申请 + 群通知 + 入群邀请），弥补实时 WS 推送的不足
   loadJoinRequestsHistory();
   loadGroupNotificationsHistory();
+  loadGroupInvitesHistory();
 }
 
 /**
@@ -329,6 +351,76 @@ async function onSelectGroup(group) {
   _selectGroup(group);
   resetChat();
   await loadChatHistory(false);
+}
+
+/**
+ * 撤回消息（ChatMessageArea emit → useChatMessages）
+ * @param {Object} msg - 要撤回的消息对象
+ */
+function onRecallMessage(msg) {
+  recallMessage(msg);
+}
+
+// ==================== 邀请好友入群 ====================
+const inviteMode = ref(false);
+const inviteGroupId = ref(null);
+const inviteTargetName = ref('');
+const inviteGroupMemberIds = ref([]);  // 目标群已有成员的 userId 列表，用于过滤邀请列表
+
+/** 从群资料卡打开邀请模式 */
+async function openInviteFromProfile(group) {
+  if (!group?.groupId) return;
+  inviteGroupId.value = group.groupId;
+  inviteTargetName.value = group.groupName || '群聊';
+  inviteMode.value = true;
+  // 异步获取群成员列表，用于过滤已在群中的好友
+  try {
+    const res = await getGroupMembers(group.groupId);
+    if (res.code === 200 && Array.isArray(res.data)) {
+      inviteGroupMemberIds.value = res.data.map(m => m.userId);
+    }
+  } catch { /* 静默失败——若获取失败则不过滤，前端让后端兜底校验 */ }
+}
+
+/** 确认邀请选中的好友 */
+async function handleConfirmInvite({ userIds, message }) {
+  if (!inviteGroupId.value || !userIds?.length) return;
+  const results = { success: [], alreadyMember: [], alreadyInvited: [], error: [] };
+
+  for (const userId of userIds) {
+    const userName = friends.value.find(f => f.userId === userId)?.userName || `用户${userId}`;
+    try {
+      const res = await inviteToGroup(inviteGroupId.value, userId, message ? { message } : {});
+      if (res.code === 201 || res.code === 200) {
+        results.success.push(userName);
+      } else {
+        results.error.push(`${userName}（${res.message || '未知错误'}）`);
+      }
+    } catch (e) {
+      const msg = e?.message || '';
+      if (msg.includes('已在群') || msg.includes('已加入') || msg.includes('已是群成员')) {
+        results.alreadyMember.push(userName);
+      } else if (msg.includes('已邀请') || msg.includes('重复') || msg.includes('已发送')) {
+        results.alreadyInvited.push(userName);
+      } else {
+        results.error.push(userName + (msg ? `：${msg}` : ''));
+      }
+    }
+  }
+
+  if (results.success.length) toast.success(`已向 ${results.success.join('、')} 发送邀请`);
+  if (results.alreadyMember.length) toast.warning(`${results.alreadyMember.join('、')} 已在群聊中，无需邀请`);
+  if (results.alreadyInvited.length) toast.warning(`已向 ${results.alreadyInvited.join('、')} 发送过邀请，请等待对方确认`);
+  if (results.error.length) toast.error(results.error.join('；'));
+  cancelInviteMode();
+}
+
+/** 取消邀请模式 */
+function cancelInviteMode() {
+  inviteMode.value = false;
+  inviteGroupId.value = null;
+  inviteTargetName.value = '';
+  inviteGroupMemberIds.value = [];
 }
 
 // ==================== 通知面板：加载更多（同时加载收到与发出） ====================

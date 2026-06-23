@@ -142,8 +142,8 @@
  * @property {string} content - 消息内容
  * @property {string} sendTime - 发送时间 (YYYY-MM-DDTHH:mm:ss)
  * @property {boolean} readStatus - 是否已读
+ * @property {boolean} [isDeleted] - 是否已被撤回（v2.6+，被撤回消息保留在历史中，前端据此渲染撤回占位）
  */
-
 /**
  * WebSocket 私聊消息
  * @typedef {Object} WsPrivateMessage
@@ -244,6 +244,7 @@
  * @property {number} groupId - 群组ID
  * @property {string} content - 消息内容
  * @property {string} sendTime - 发送时间 (YYYY-MM-DDTHH:mm:ss)
+ * @property {boolean} [isDeleted] - 是否已被撤回（v2.6+）
  */
 
 /**
@@ -277,6 +278,27 @@
  * @property {number} targetUserId - 新群主ID
  * @property {string} content - 通知文本（如 "xxx 成为新群主"）
  * @property {string} sendTime - 转让时间
+ */
+
+/**
+ * WebSocket 消息撤回通知
+ * @typedef {Object} WsMessageRecall
+ * @property {'MESSAGE_RECALL'} type - 消息类型
+ * @property {number} senderId - 撤回者ID
+ * @property {string} senderName - 撤回者用户名
+ * @property {number} recordId - 被撤回的消息记录ID
+ * @property {number} [receiverId] - 接收者ID（私聊，群聊时为 null）
+ * @property {number} [groupId] - 群组ID（群聊，私聊时为 null）
+ * @property {string} content - 撤回提示文本（如 "消息已被撤回"）
+ * @property {string} sendTime - 撤回时间
+ */
+
+/**
+ * WebSocket 群聊已读回执（C→S 客户端发送）
+ * @typedef {Object} WsGroupReadReceipt
+ * @property {'GROUP_READ_RECEIPT'} type - 消息类型
+ * @property {number} groupId - 群组ID
+ * @property {number} recordId - 已读到的最后一条消息记录ID
  */
 
 // 导出空对象以支持 import

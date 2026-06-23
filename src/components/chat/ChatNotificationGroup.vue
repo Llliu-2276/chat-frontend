@@ -15,33 +15,37 @@
         <div v-if="item._divider" class="time-divider"><span>{{ item.label }}</span></div>
         <!-- 成员变动 / 群解散 / 群主转让 通知 -->
         <!-- JOIN：群聊视角（发送者=群聊，头像=群名首字，内容=谁加入了） -->
-        <!-- LEAVE（自己）：右侧气泡 -->
-        <!-- LEAVE（他人）/ DISBANDED / OWNER_TRANSFERRED：左侧气泡，发送者=当事人 -->
+        <!-- LEAVE（自己）/ OWNER_TRANSFERRED（自己转让）：右侧气泡 -->
+        <!-- LEAVE（他人）/ DISBANDED / OWNER_TRANSFERRED（他人）：左侧气泡，发送者=当事人 -->
         <div v-else-if="item._type === 'member-change'"
              class="message-row"
-             :class="isSelfLeave(item) ? 'is-self' : 'is-other'">
+             :class="isSelfSide(item) ? 'is-self' : 'is-other'">
           <!-- 头像 -->
           <div class="bubble-avatar avatar avatar-sm"
-               :class="{ clickable: !isSelfLeave(item) && item.type !== 'GROUP_MEMBER_JOIN' }"
-               :style="isSelfLeave(item)
+               :class="{ clickable: !isSelfSide(item) && item.type !== 'GROUP_MEMBER_JOIN' }"
+               :style="isSelfSide(item)
                  ? { background: 'linear-gradient(135deg, #11998e, #38ef7d)', color: '#fff' }
                  : item.type === 'GROUP_MEMBER_JOIN'
                    ? { background: '#c8e6c9', color: '#2e7d32' }
                    : { background: '#9df3c4', color: '#333' }"
-               @click="!isSelfLeave(item) && item.type !== 'GROUP_MEMBER_JOIN' && viewGroupMemberProfile(item)"
-               :title="item.type === 'GROUP_MEMBER_JOIN' ? '' : (isSelfLeave(item) ? '' : '查看 ' + item.senderName + ' 的资料')">
+               @click="!isSelfSide(item) && item.type !== 'GROUP_MEMBER_JOIN' && viewGroupMemberProfile(item)"
+               :title="item.type === 'GROUP_MEMBER_JOIN' ? '' : (isSelfSide(item) ? '' : '查看 ' + item.senderName + ' 的资料')">
             {{ item.type === 'GROUP_MEMBER_JOIN' ? (item.groupName?.charAt(0) || '?') : (item.senderName?.charAt(0) || '?') }}
           </div>
           <div class="bubble-content">
             <span class="bubble-sender-name">
               <template v-if="item.type === 'GROUP_MEMBER_JOIN'">「{{ item.groupName }}」群通知</template>
               <template v-else-if="isSelfLeave(item)">你退出了群聊</template>
+              <template v-else-if="isSelfTransfer(item)">你转让了群主</template>
               <template v-else>{{ item.senderName }}</template>
             </span>
             <div class="bubble group-notif-bubble"
-                 :class="isSelfLeave(item) ? 'self-bubble' : 'other-bubble'">
+                 :class="isSelfSide(item) ? 'self-bubble' : 'other-bubble'">
               <div>
-                <template v-if="item.type === 'GROUP_DISBANDED' || item.type === 'GROUP_OWNER_TRANSFERRED'">
+                <template v-if="item.type === 'GROUP_DISBANDED'">
+                  <span>{{ item.content || item.groupName }}</span>
+                </template>
+                <template v-else-if="item.type === 'GROUP_OWNER_TRANSFERRED'">
                   <span>{{ item.content || item.groupName }}</span>
                 </template>
                 <template v-else-if="item.type === 'GROUP_MEMBER_JOIN'">
@@ -60,7 +64,7 @@
               </div>
               <div class="bubble-footer">
                 <span class="bubble-time">{{ formatGroupNotifTime(item.sendTime) }}</span>
-                <span v-if="!item.isRead && !isSelfLeave(item) && item.type !== 'GROUP_MEMBER_JOIN'" class="unread-dot"></span>
+                <span v-if="!item.isRead && !isSelfSide(item) && item.type !== 'GROUP_MEMBER_JOIN'" class="unread-dot"></span>
               </div>
             </div>
           </div>
@@ -106,6 +110,39 @@
             </div>
           </div>
         </div>
+        <!-- 入群邀请（被邀请者视角） -->
+        <div v-else-if="item._type === 'group-invite'"
+             class="message-row is-other">
+          <div class="bubble-avatar avatar avatar-sm"
+               :style="{ background: '#9df3c4', color: '#333' }"
+               :title="'查看 ' + item.senderName + ' 的资料'">
+            {{ item.senderName?.charAt(0) || '?' }}
+          </div>
+          <div class="bubble-content">
+            <span class="bubble-sender-name">{{ item.senderName }}</span>
+            <div class="bubble group-notif-bubble other-bubble">
+              <div>
+                <span class="group-notif-action">邀请你加入 </span>
+                <span class="group-notif-group-name">「{{ item.groupName }}」</span>
+              </div>
+              <div v-if="item.message" class="join-req-message">"{{ item.message }}"</div>
+              <div class="bubble-footer">
+                <span class="bubble-time">{{ formatGroupNotifTime(item.sendTime) }}</span>
+                <span v-if="!item.isRead" class="unread-dot"></span>
+              </div>
+            </div>
+            <div class="bubble-actions">
+              <button class="btn-accept" style="padding:6px 16px;font-size:12px"
+                      @click="emit('handle-group-invite', item.inviteId, item.groupId, true)">
+                <el-icon><Select /></el-icon> 接受
+              </button>
+              <button class="btn-danger" style="padding:6px 16px;font-size:12px"
+                      @click="emit('handle-group-invite', item.inviteId, item.groupId, false)">
+                <el-icon><CloseBold /></el-icon> 拒绝
+              </button>
+            </div>
+          </div>
+        </div>
       </template>
       <div class="no-more">— 仅显示最近通知 —</div>
     </template>
@@ -122,10 +159,11 @@ defineOptions({ name: 'ChatNotificationGroup' });
 const props = defineProps({
   groupNotifications: { type: Array, default: () => [] },
   joinGroupRequests: { type: Array, default: () => [] },
+  groupInvites: { type: Array, default: () => [] },
   currentUserId: { type: Number, default: 0 },
 });
 
-const emit = defineEmits(['handle-join-request', 'view-profile']);
+const emit = defineEmits(['handle-join-request', 'handle-group-invite', 'view-profile']);
 
 const formatGroupNotifTime = (t) => formatTime(t);
 
@@ -149,15 +187,29 @@ function isSelfLeave(item) {
   return item.type === 'GROUP_MEMBER_LEAVE' && item.senderId === props.currentUserId;
 }
 
+/** 判断是否为当前用户自己转让群主（原群主视角） */
+function isSelfTransfer(item) {
+  return item.type === 'GROUP_OWNER_TRANSFERRED' && item.senderId === props.currentUserId;
+}
+
+/**
+ * 当前成员变动项是否为"自己侧"（右侧显示）
+ * LEAVE(自己) 或 OWNER_TRANSFERRED(自己转让) → 右侧绿色气泡
+ */
+function isSelfSide(item) {
+  return isSelfLeave(item) || isSelfTransfer(item);
+}
+
 const allGroupItems = computed(() => {
   const items = [];
   for (const n of props.groupNotifications) {
     items.push({ ...n, _type: 'member-change', _key: n._key, _sortTime: n.sendTime });
   }
   for (const r of props.joinGroupRequests) {
-    // 所有申请均展示：自己的（不限状态）+ 他人的（不限状态，含已处理）
-    // 审批按钮通过 isSelfRequest + status===0 控制，已处理的不显示按钮
     items.push({ ...r, _type: 'join-request', _key: r._key, _sortTime: r.sendTime });
+  }
+  for (const inv of props.groupInvites) {
+    items.push({ ...inv, _type: 'group-invite', _key: inv._key, _sortTime: inv.sendTime });
   }
   items.sort((a, b) => {
     const ta = a._sortTime ? new Date(a._sortTime).getTime() : 0;

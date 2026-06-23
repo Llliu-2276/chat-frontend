@@ -46,6 +46,9 @@
       @send-message-to="(user) => $emit('send-message-to', user)"
       @dissolve-or-leave-group="(group) => $emit('dissolve-or-leave-group', group)"
       @join-group="(group) => $emit('join-group', group)"
+      @transfer-owner="(member) => $emit('transfer-owner', profileUser, member)"
+      @kick-member="(member) => $emit('kick-member', profileUser, member)"
+      @open-invite="(group) => $emit('open-invite', group)"
     />
   </div>
 </template>
@@ -69,6 +72,7 @@ defineEmits([
   'edit-username', 'change-password',
   'send-message-to', 'add-friend-from-profile', 'delete-friend',
   'dissolve-or-leave-group', 'join-group',
+  'transfer-owner', 'kick-member', 'open-invite',
   'logout',
 ]);
 </script>

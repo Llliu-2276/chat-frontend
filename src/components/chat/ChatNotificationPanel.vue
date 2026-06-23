@@ -44,8 +44,10 @@
       v-if="initialTab === 'group'"
       :group-notifications="groupNotifications"
       :join-group-requests="joinGroupRequests"
+      :group-invites="groupInvites"
       :current-user-id="currentUserId"
       @handle-join-request="(gid, rid, accept) => $emit('handle-join-request', gid, rid, accept)"
+      @handle-group-invite="(inviteId, gid, accept) => $emit('handle-group-invite', inviteId, gid, accept)"
       @view-profile="(user) => $emit('view-profile', user)"
     />
   </div>
@@ -71,12 +73,13 @@ const props = defineProps({
   pendingCount: { type: Number, default: 0 },
   groupNotifications: { type: Array, default: () => [] },
   joinGroupRequests: { type: Array, default: () => [] },
+  groupInvites: { type: Array, default: () => [] },
   initialTab: { type: String, default: 'friend' },
   mobileShow: { type: Boolean, default: false },
   currentUserId: { type: Number, default: 0 },
 });
 
-defineEmits(['handle-request', 'handle-join-request', 'load-more', 'back-to-list', 'view-profile']);
+defineEmits(['handle-request', 'handle-join-request', 'handle-group-invite', 'load-more', 'back-to-list', 'view-profile']);
 
 const panelRef = ref(null);
 

@@ -5,7 +5,9 @@
  -->
 <template>
   <Transition name="slide-panel">
-    <div v-if="visible" class="side-panel glass-card">
+    <div v-if="visible" class="side-panel glass-card" :class="{ 'dimmed': dimmed }">
+      <!-- 邀请模式遮罩 -->
+      <div v-if="dimmed" class="dimmed-overlay"></div>
       <!-- 面板头部 -->
       <div class="panel-header">
         <button class="card-action-btn panel-close-btn" @click="$emit('close')" title="收起">
@@ -134,6 +136,9 @@
                 @delete-friend="(user) => $emit('delete-friend', user)"
                 @dissolve-or-leave-group="(user) => $emit('dissolve-or-leave-group', user)"
                 @join-group="(group) => $emit('join-group', group)"
+                @transfer-owner="(group, member) => $emit('transfer-owner', group, member)"
+                @kick-member="(group, member) => $emit('kick-member', group, member)"
+                @open-invite="(group) => $emit('open-invite', group)"
                 @logout="$emit('logout')"
               />
             </template>
@@ -170,6 +175,7 @@ const props = defineProps({
   profileContext: { type: String, default: 'self' },  // 'self' | 'friend' | 'stranger' | 'group'
   profileLoading: { type: Boolean, default: false },  // Profile 操作加载中
   isGroupMember: { type: Boolean, default: false },   // 当前查看的群聊是否已加入
+  dimmed: { type: Boolean, default: false },           // 邀请模式遮罩
 });
 
 const emit = defineEmits([
@@ -185,6 +191,9 @@ const emit = defineEmits([
   'add-friend-from-profile',// 从资料卡添加好友，参数：user
   'delete-friend',          // 删除好友，参数：user
   'dissolve-or-leave-group',// 解散/退出群聊（profile-group），参数：groupObject
+  'transfer-owner',         // 转让群主（profile-group），参数：(group, targetMember)
+  'kick-member',            // 踢出成员（profile-group），参数：(group, targetMember)
+  'open-invite',            // 打开邀请好友模式（profile-group），参数：group
   'view-profile',           // 查看用户/群聊资料（搜索结果点击），参数：user/group
   'logout',                 // 登出（本人资料卡内）
 ]);
@@ -278,6 +287,16 @@ function onGroupSearch() {
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+}
+
+/* 邀请模式遮罩 */
+.dimmed-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.12);
+  pointer-events: all;
+  border-radius: inherit;
 }
 
 .panel-header {

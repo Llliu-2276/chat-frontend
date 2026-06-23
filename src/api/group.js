@@ -171,3 +171,115 @@ export function getGroupNotifications(groupId, params) {
     params,
   });
 }
+
+/**
+ * 撤回群聊消息（2分钟内，仅发送者）
+ * @param {number} groupId - 群组ID
+ * @param {number} recordId - 消息记录ID
+ * @returns {Promise} 返回撤回结果
+ */
+export function recallGroupMessage(groupId, recordId) {
+  return request({
+    url: `/group/${groupId}/message/${recordId}/recall`,
+    method: 'POST',
+  });
+}
+
+/**
+ * 标记群聊消息已读（采用"最后已读消息ID"方案）
+ * recordId 及之前的所有消息视为已读，之后的视为未读
+ * 也可通过 WebSocket 发送 GROUP_READ_RECEIPT 实现同等效果
+ * @param {number} groupId - 群组ID
+ * @param {number} recordId - 已读到的最后一条消息记录ID
+ * @returns {Promise} 返回标记结果
+ */
+export function markGroupRead(groupId, recordId) {
+  return request({
+    url: `/group/${groupId}/read/${recordId}`,
+    method: 'POST',
+  });
+}
+
+/**
+ * 获取群未读消息数
+ * @param {number} groupId - 群组ID
+ * @returns {Promise} 返回未读消息数量，res.data 为数字
+ */
+export function getGroupUnreadCount(groupId) {
+  return request({
+    url: `/group/${groupId}/unread-count`,
+    method: 'GET',
+  });
+}
+
+/**
+ * 转让群主（仅群主）
+ * @param {number} groupId - 群组ID
+ * @param {number} targetUserId - 新群主用户ID
+ * @returns {Promise} 返回转让结果
+ */
+export function transferGroupOwner(groupId, targetUserId) {
+  return request({
+    url: `/group/${groupId}/transfer/${targetUserId}`,
+    method: 'POST',
+  });
+}
+
+/**
+ * 踢出群成员（仅群主）
+ * @param {number} groupId - 群组ID
+ * @param {number} targetUserId - 被踢用户ID
+ * @returns {Promise} 返回踢出结果
+ */
+export function kickGroupMember(groupId, targetUserId) {
+  return request({
+    url: `/group/${groupId}/member/${targetUserId}`,
+    method: 'DELETE',
+  });
+}
+
+/**
+ * 邀请好友入群（邀请者须是群成员且被邀请者须是好友）
+ * @param {number} groupId - 群组ID
+ * @param {number} inviteeId - 被邀请好友的用户ID
+ * @param {Object} [data] - 可选参数
+ * @param {string} [data.message] - 邀请留言（最大200字符）
+ * @returns {Promise} 返回邀请结果（成功码 201）
+ */
+export function inviteToGroup(groupId, inviteeId, data = {}) {
+  return request({
+    url: `/group/${groupId}/invite/${inviteeId}`,
+    method: 'POST',
+    data,
+  });
+}
+
+/**
+ * 处理入群邀请（被邀请者接受/拒绝）
+ * @param {number} groupId - 群组ID
+ * @param {number} inviteId - 邀请ID
+ * @param {boolean} accept - true 接受，false 拒绝
+ * @returns {Promise} 返回处理结果
+ */
+export function handleGroupInvite(groupId, inviteId, accept) {
+  return request({
+    url: `/group/${groupId}/invite/${inviteId}/handle`,
+    method: 'POST',
+    data: { accept },
+  });
+}
+
+/**
+ * 查看收到的入群邀请列表（当前登录用户视角）
+ * @param {Object} params - 分页参数 { page, size }
+ * @returns {Promise} 返回收到的入群邀请分页数据
+ *   - data.content[]: { inviteId, groupId, groupName, inviterId, inviterName, message, status, createTime }
+ *   - status: 0 待处理 / 1 已同意 / 2 已拒绝
+ */
+export function getReceivedInvites(params = {}) {
+  return request({
+    url: '/group/invites/received',
+    method: 'GET',
+    params: { page: params.page || 1, size: params.size || 50 },
+  });
+}

@@ -89,6 +89,14 @@ Same pattern as PRIVATE_MESSAGE — both `useChatMessages` and `useFriendList` r
 
 **Group unread persistence**: `useFriendList` maintains a `chat_group_unread` localStorage key (`{ [groupId]: unreadCount }`). On every WS group message, the cache is saved. On `loadGroups()`, cached values are merged with backend data (backend value takes priority, cache is fallback). When switching to a group chat, its unread count is cleared both in memory and localStorage.
 
+### MESSAGE_RECALL Dual-Handler Pattern
+
+Same pattern as PRIVATE_MESSAGE/GROUP_MESSAGE — both `useChatMessages` and `useFriendList` register handlers for `MESSAGE_RECALL`:
+- **`useChatMessages`** handles message display: sets `recalled = true` on the matched message (by `recordId`), persists metadata via `addRecalledMessage()`.
+- **`useFriendList`** handles sidebar state: updates `lastMessage` text to "xxx撤回了一条消息" when the recalled message matches the last message of the corresponding friend/group chat.
+
+Both handlers search messages by `recordId` and handle both private (`groupId: null`) and group (`groupId` present) recall scenarios.
+
 ### GROUP_MEMBER_JOIN / GROUP_MEMBER_LEAVE
 
 Handled by `useFriendList` — stored to `groupNotifications[]` (max 100), a toast notification is shown, and group list is refreshed via `loadGroups({ silent: true })`. Group notifications flow: WS event → useFriendList.groupNotifications[] → Chat.vue passes to ChatNotificationPanel → ChatNotificationGroup renders as system message bubbles.
@@ -98,6 +106,8 @@ Handled by `useFriendList` — stored to `groupNotifications[]` (max 100), a toa
 **JOIN 通知的群聊视角**：`ChatNotificationGroup` 将 JOIN 通知渲染为群聊公告样式——头像为群名首字（绿底 `#c8e6c9`）、发送者显示为「XXX」群通知、内容为实际加入者名字（优先取 `content` 字段，降级用 `senderName` 构造）。这解决了后端 REST 通知中 JOIN 事件的 `senderId`/`senderName` 可能存为群主而非实际成员的数据不一致问题。
 
 **退出通知的双侧渲染**：他人退出 → 左侧气泡；自己退出（`isSelfLeave = type === 'GROUP_MEMBER_LEAVE' && senderId === currentUserId`）→ 右侧绿色气泡。`isSelfLeave` 函数在 `ChatNotificationGroup.vue` 中定义。
+
+**LEAVE 通知的 senderId 规范化**：REST 通知中 `MEMBER_LEAVE` 事件的 `senderId`/`senderName` 可能是踢人者（群主），实际退出者是 `targetUserId`/`targetUserName`。`loadGroupNotificationsHistory()` 加载时优先用 `targetUserId`/`targetUserName` 替换 `senderId`/`senderName`，确保气泡显示正确的人名且 `isSelfLeave` 判断准确。
 
 **群名同步**：`syncNotificationGroupNames()` 在每次 `loadGroups()` 完成后运行，用最新的 `groups` 列表更新 `groupNotifications` 中的 `groupName`，解决 WS 消息不含 `groupName` 字段导致显示「群聊x」的问题。
 
@@ -113,14 +123,14 @@ Despite its name, this composable owns both `friends[]` and `groups[]` reactive 
 
 ### Pending Work (TODO)
 
-Check `.claude/TODO_群聊系统待实现.md` before starting any group-chat related work (note: `.claude/` is gitignored — this file is local-only). The document tracks backend APIs and WebSocket message types that are implemented on the server but not yet wired into the frontend, plus known bugs (B1-B4). Key gaps as of 2026-06-22:
+Check `.claude/TODO_群聊系统待实现.md` before starting any group-chat related work (note: `.claude/` is gitignored — this file is local-only). The document tracks backend APIs and WebSocket message types that are implemented on the server but not yet wired into the frontend, plus known bugs (B1-B4). Key gaps as of 2026-06-23:
 
-| Priority | Category | Items |
-|----------|----------|-------|
-| 🔴 P0 | 核心功能 | 消息撤回（私聊+群聊）、群聊已读回执 |
-| 🟡 P1 | 群管理 | 群主转让、踢人、邀请入群、群解散通知 |
-| 🟢 P2 | 增强功能 | 消息搜索、编辑群信息、通知历史、入群申请列表、用户拉黑系统 |
-| 🟢 P3 | 降级兜底 | 群聊最后消息缺失兜底优化 |
+| Priority | Category | Items | Status |
+|----------|----------|-------|--------|
+| ✅ P0 | 核心功能 | 消息撤回（私聊+群聊）、群聊已读回执 | 已完成（2026-06-23） |
+| ✅ P1 | 群管理 | 群主转让、踢人、邀请入群、群解散通知 | 已完成（2026-06-23） |
+| 🟢 P2 | 增强功能 | 消息搜索、编辑群信息、通知历史、入群申请列表、用户拉黑系统 | 待实现 |
+| 🟢 P3 | 降级兜底 | 群聊最后消息缺失兜底优化 | 待实现 |
 
 ## Key Architectural Patterns
 
@@ -231,6 +241,9 @@ Don't duplicate these — import from the canonical location:
 
 - **`utils/time.js`** — `formatTime(t)` (ISO→HH:mm), `formatDividerLabel(timeStr)` (smart date label: 今天/昨天/周X/日期), `insertTimeDividers(items, timeKey, options?)` (auto-insert 5-min gap dividers, returns mixed array with `{ _divider: true, key, label }` objects). Used by ChatMessageArea, ChatNotificationFriend, ChatNotificationGroup, ChatLeftPanel.
 - **`utils/debounce.js`** — `createDebounce(fn, delay=300)` returns `{ invoke, cancel }` for search-input debouncing. Used by useSidePanel for both user and group search.
+- **`utils/interactedGroups.js`** — `loadInteractedGroups()` / `addInteractedGroup(groupId, groupName)` / `mergeInteractedGroups(groups)`. 持久化用户交互过的群 ID 到 `localStorage` key `chat_interacted_groups`（最多50个），用于用户退群后仍能查询历史通知和入群申请。`useNotifications` 加载通知历史时用它补全已退群聊的群名；`useFriendList.loadGroups()` 之后调用 `mergeInteractedGroups` 批量同步。
+- **`utils/recalledMessages.js`** — `loadRecalledIds()` / `addRecalledId(recordId)` / `addRecalledIds(recordIds)` / `isRecalled(recordId)`. 持久化已撤回消息的 `recordId` 到 `localStorage` key `chat_recalled_messages`（最多500个），用于 `loadChatHistory` 中标记 `recalled: true`。因为后端历史接口可能不返回 `recalled` 字段或修改 `content`，前端自行维护此集合作为降级兜底。
+- **`utils/notificationReadState.js`** — `loadNotificationReadState()` / `saveNotificationReadState(state)` / `getLastReadAt()` / `updateLastReadAt(isoStr)` / `computeIsRead(sendTime, isPanelOpen)`. 管理群聊通知的已读状态，用 `localStorage` key `chat_notification_read_state` 存储 `lastReadAt` 时间戳（而非逐条存储）。`computeIsRead` 逻辑：面板打开时 → 已读；首次访问（lastReadAt 为 null）→ 已读；sendTime <= lastReadAt → 已读；sendTime > lastReadAt → 未读。`useNotifications` 和 `ChatNotificationGroup` 用它计算通知气泡的未读红点。
 - **`utils/storage.js`** — `setToken/getToken/removeToken`, `setUserInfo/getUserInfo/removeUserInfo`, `clearAuth()`. Keys: `chat_token`, `chat_user_info`.
 
 ### Extracted Composables
@@ -276,12 +289,16 @@ All shared design tokens in `assets/shared.css`:
 | `FRIEND_REQUEST` | receive | `useNotifications` | Shows toast + preloads received list (dedup by senderId+status) |
 | `FRIEND_REQUEST_RESULT` | receive | `useNotifications` | Shows toast + refreshes friends if accepted |
 | `GROUP_MESSAGE` | send/receive | `useChatMessages` + `useFriendList` | Dual-handler: display + sidebar unread/last-message + unread persistence |
+| `MESSAGE_RECALL` | send/receive | `useChatMessages` + `useFriendList` | Dual-handler: marks message `recalled=true` + persists to localStorage + updates sidebar lastMessage |
+| `GROUP_READ_RECEIPT` | send | `useChatMessages` | C→S: marks group message as read (mirrors `READ_RECEIPT` pattern). Sent on current-chat group message receipt. |
 | `GROUP_MEMBER_JOIN` | receive | `useFriendList` (+ `useNotifications`) | Store to `groupNotifications[]` (max 100) + toast + `loadGroups({ silent: true })`. `useNotifications` also handles as fallback approval detector (senderId===userId → update self join-request status). Rendered as group-announcement: avatar=group initial, sender="「XXX」群通知". |
 | `GROUP_MEMBER_LEAVE` | receive | `useFriendList` | Same handler as JOIN. Rendered as left bubble (others) or right bubble (self: `isSelfLeave`). |
 | `GROUP_DISBANDED` | receive | `useFriendList` | Removes group from `groups[]`, shows toast "群聊 [name] 已解散", switches to friend list if currently viewing that group |
 | `GROUP_OWNER_TRANSFERRED` | receive | `useFriendList` | Shows toast with old→new owner names, refreshes group list silently |
 | `JOIN_GROUP_REQUEST` | receive | `useNotifications` | Store to `joinGroupRequests[]` (max 50) + toast (sent to group owners — backend v2.1). Resolves group name from `groups` ref with WS content field fallback. |
 | `JOIN_GROUP_REQUEST_RESULT` | receive | `useNotifications` | Updates self-join request status (accepted→1, rejected→2) + toast + refreshes group list if accepted. `GROUP_MEMBER_JOIN` serves as fallback. |
+| `GROUP_INVITE` | receive | `useNotifications` | Store to `groupInvites[]` (max 50) + toast（被邀请者视角）. REST 历史通过 `GET /api/group/invites/received` 加载（`loadGroupInvitesHistory()`）. 刷新后持久化可见. |
+| `GROUP_INVITE_RESULT` | receive | `useNotifications` | toast 通知邀请者被邀请人已接受/拒绝（邀请者视角）. 防御性清理 `groupInvites[]` 中的对应条目. |
 | `ERROR` | receive | `Chat.vue` + `wsManager` (fallback) | Chat.vue handles auth errors → force logout; wsManager provides default `console.error` for any unhandled types |
 
 Types are defined as JSDoc `@typedef` in `types/index.js`. All WS message types the client sends (`PRIVATE_MESSAGE`, `GROUP_MESSAGE`, `READ_RECEIPT`) are sent as `{ type, ...data }` objects via `wsManager.send()`.

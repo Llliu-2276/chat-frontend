@@ -118,6 +118,9 @@ loading.hide();
 | `isLoggingOut` | `Boolean` | 登出中（禁用按钮） |
 | `activeView` | `String` | 当前视图状态 |
 | `mobileShow` | `Boolean` | 移动端是否显示列表 |
+| `inviteMode` | `Boolean` | 是否处于邀请好友入群模式 |
+| `inviteGroupName` | `String` | 邀请模式下目标群名称 |
+| `inviteGroupMemberIds` | `Array` | 邀请模式下目标群已有成员的 userId 列表（用于过滤复选框） |
 
 | Events | 说明 |
 |--------|------|
@@ -132,6 +135,8 @@ loading.hide();
 | `open-profile` | 打开个人资料（点击用户栏头像/用户名） |
 | `open-notifications` | 打开好友通知面板 |
 | `open-group-notifications` | 打开群聊通知面板 |
+| `confirm-invite` | 确认邀请，参数：`{ userIds, message }` |
+| `cancel-invite` | 取消邀请模式 |
 
 **内部功能**：
 - 好友搜索过滤（按用户名/账号）
@@ -139,6 +144,7 @@ loading.hide();
 - 群聊加号下拉菜单（创建/加入，使用 Teleport 避免 overflow 裁剪）
 - 通知入口：好友通知（带未处理红点）+ 群聊通知（带事件数红点）
 - 顶部用户栏点击可查看个人资料
+- 邀请模式：标题栏高亮 + 好友前出现复选框 + 留言输入框 + 邀请/取消按钮 + 自动过滤已在群中的好友
 
 ---
 
@@ -165,6 +171,16 @@ loading.hide();
 | `scroll-top` | 滚动到顶部（加载更多） |
 | `back-to-list` | 返回好友列表（移动端） |
 | `view-profile` | 查看好友资料（点击头部头像），参数：好友对象 |
+| `recall-message` | 撤回消息，参数：消息对象（含 recordId, groupId 等） |
+
+**已撤回消息**：
+- 已撤回消息（`item.recalled === true`）渲染灰色斜体虚线气泡，内容显示"你撤回了一条消息"（自己）或"xxx撤回了一条消息"（他人）
+- 后端 v2.6+ 历史接口返回 `isDeleted` 字段，刷页面后自动识别为已撤回
+
+**右键菜单（消息撤回）**：
+- 右键自己的消息气泡（2 分钟内、未被撤回、有 recordId）→ 弹出磨砂玻璃右键菜单（Teleport to body）
+- 菜单含"撤回"选项 → `ElMessageBox.confirm` 确认 → `emit('recall-message', msg)` → Chat.vue → `useChatMessages.recallMessage()`
+- 点击菜单外部自动关闭，菜单位置自动避让屏幕边界
 
 **暴露方法**（通过 `defineExpose`）：
 - `scrollToBottom()` — 滚动到底部
@@ -263,6 +279,20 @@ loading.hide();
 **已加入成员**：完整信息（名称/账号/群主/成员数/创建日期）+ 成员列表 + "发消息" + "解散群聊"（群主）/ "退出群聊"（普通成员）
 **非成员**：基本信息（名称/账号/成员数）+ "加入群聊"按钮
 
+**群主操作按钮**（仅 `profileUser.isOwner` 时显示）：
+- "转让群主"：点击后进入选择模式（`selectMode = 'transfer'`），成员列表每项出现 `el-radio`，选中非群主成员后确认
+- "踢出成员"：同上，`selectMode = 'kick'`，确认后调用 `kickGroupMember` API
+- "邀请好友"：成员列表标题栏显示，emit `open-invite` 触发 Chat.vue 邀请模式
+
+| Events | 说明 |
+|--------|------|
+| `send-message-to` | 发送消息给群聊 |
+| `dissolve-or-leave-group` | 解散（群主）/ 退出（成员）群聊 |
+| `join-group` | 非成员申请加入群聊 |
+| `transfer-owner` | 转让群主，参数：`targetUserId` |
+| `kick-member` | 踢出成员，参数：`targetUserId` |
+| `open-invite` | 打开邀请好友入群模式 |
+
 **成员列表加载**：`getGroupInfo`（主）→ `getGroupMembers`（降级）。排序：群主优先 → joinDate 升序。群主头像金色渐变 + "群主"标签。
 
 ---
@@ -280,6 +310,7 @@ loading.hide();
 |--------|------|
 | `handle-request` | 处理好友申请，参数：`(requestId, accept)` |
 | `handle-join-request` | 处理入群申请，参数：`(requestId, groupId, accept)` |
+| `handle-group-invite` | 处理入群邀请（接受/拒绝），参数：`(inviteId, groupId, accept)` |
 | `load-more` | 加载更多 |
 | `back-to-list` | 返回好友列表（移动端） |
 | `view-profile` | 查看用户资料（点击头像） |
@@ -304,16 +335,21 @@ loading.hide();
 **职责**：合并群成员变更事件 + 入群申请为统一时间线气泡流。
 
 **特性**：
-- 两种消息类型：`member-change`（成员加入/离开/群解散/群主转让）和 `join-request`（入群申请）
+- 三种消息类型：`member-change`（成员加入/离开/群解散/群主转让）、`join-request`（入群申请）、`group-invite`（入群邀请）
 - **成员加入（JOIN）**→ 群聊视角左侧气泡：头像=群名首字（绿底），发送者=「XXX」群通知，内容=实际加入者的名字
 - **成员退出（LEAVE，他人）**→ 左侧气泡：头像=退出的成员，发送者=成员名，内容="XXX 退出了「YYY」"
 - **成员退出（LEAVE，自己）**→ 右侧气泡（`is-self`）：主渐变头像，"你退出了「XXX」"
-- **群解散 / 群主转让**→ 左侧气泡，内容来自 `content` 字段
+- **群主转让（他人转让）**→ 左侧气泡，内容来自 `content` 字段
+- **群主转让（自己转让）**→ 右侧气泡（`isSelfSide`），发送者="你转让了群主"
+- **群解散**→ 左侧气泡，内容来自 `content` 字段
 - 入群申请：他人申请（左侧，待处理时有同意/拒绝按钮），本人申请（右侧，显示状态标签）
+- 入群邀请（`group-invite`）：被邀请者视角，左侧气泡显示"XXX 邀请你加入「群名」"+ 接受/拒绝按钮
 - 已处理的入群申请（status ≠ 0）仍显示但不再显示审批按钮
 - 使用 `insertTimeDividers` 插入时间分隔符
 - `isSelfRequest(item)` = `item._isSelf || item.senderId === currentUserId`
 - `isSelfLeave(item)` = `item.type === 'GROUP_MEMBER_LEAVE' && item.senderId === currentUserId`
+- `isSelfTransfer(item)` = `item.type === 'GROUP_OWNER_TRANSFERRED' && item.senderId === currentUserId`
+- `isSelfSide(item)` = `isSelfLeave(item) || isSelfTransfer(item)`（统一右侧气泡判断）
 
 ---
 

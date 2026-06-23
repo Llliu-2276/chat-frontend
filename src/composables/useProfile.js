@@ -9,7 +9,7 @@ import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import { updateUserName, changePassword } from '@/api/user';
 import { deleteFriend } from '@/api/friend';
-import { dissolveOrLeaveGroup } from '@/api/group';
+import { dissolveOrLeaveGroup, transferGroupOwner, kickGroupMember } from '@/api/group';
 import { ElMessageBox } from 'element-plus';
 
 /**
@@ -232,6 +232,58 @@ export function useProfile({ toast, friends, groups, chatTarget, chatType, reset
     }
   }
 
+  /**
+   * 转让群主
+   * @param {Object} group - 群聊对象
+   * @param {Object} targetMember - 目标成员对象（含 userId, userName）
+   */
+  async function handleTransferOwner(group, targetMember) {
+    if (!group?.groupId || !targetMember?.userId) return;
+    try {
+      await ElMessageBox.confirm(
+        `确定将群主转让给「${targetMember.userName}」吗？转让后你将失去群主权限。`,
+        '转让群主',
+        { confirmButtonText: '确定转让', cancelButtonText: '取消', type: 'warning', customClass: 'confirm-dialog' }
+      );
+    } catch { return; }
+    try {
+      const res = await transferGroupOwner(group.groupId, targetMember.userId);
+      if (res.code === 200) {
+        toast.success(`群主已转让给「${targetMember.userName}」`);
+        closeSidePanel();
+        loadGroups({ silent: true });
+      }
+    } catch (error) {
+      toast.error(error.message || '转让失败，请重试');
+    }
+  }
+
+  /**
+   * 踢出群成员
+   * @param {Object} group - 群聊对象
+   * @param {Object} targetMember - 目标成员对象（含 userId, userName）
+   */
+  async function handleKickMember(group, targetMember) {
+    if (!group?.groupId || !targetMember?.userId) return;
+    try {
+      await ElMessageBox.confirm(
+        `确定将「${targetMember.userName}」踢出群聊吗？`,
+        '踢出成员',
+        { confirmButtonText: '确定踢出', cancelButtonText: '取消', type: 'warning', customClass: 'confirm-dialog' }
+      );
+    } catch { return; }
+    try {
+      const res = await kickGroupMember(group.groupId, targetMember.userId);
+      if (res.code === 200) {
+        toast.success(`已将「${targetMember.userName}」踢出群聊`);
+        closeSidePanel();
+        loadGroups({ silent: true });
+      }
+    } catch (error) {
+      toast.error(error.message || '踢出失败，请重试');
+    }
+  }
+
   // ==================== 资料卡快捷操作 ====================
   /**
    * 从资料卡发消息给用户
@@ -272,6 +324,8 @@ export function useProfile({ toast, friends, groups, chatTarget, chatType, reset
     handleDeleteFriend,
     onViewGroupProfile,
     handleDissolveOrLeaveGroup,
+    handleTransferOwner,
+    handleKickMember,
     // 快捷操作
     handleSendMessageTo,
     handleAddFriendFromProfile,

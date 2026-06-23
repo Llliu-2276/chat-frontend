@@ -6,9 +6,10 @@
  * @module composables/useChatMessages
  */
 import { ref, nextTick, onMounted, onBeforeUnmount } from 'vue';
-import { getChatHistory, sendMessage as sendMessageApi } from '@/api/friend';
-import { getGroupHistory, sendGroupMessage } from '@/api/group';
+import { getChatHistory, sendMessage as sendMessageApi, recallMessage as recallMessageApi } from '@/api/friend';
+import { getGroupHistory, sendGroupMessage, recallGroupMessage } from '@/api/group';
 import { wsManager } from '@/utils/websocket';
+import { addRecalledMessage, isRecalled } from '@/utils/recalledMessages';
 
 /**
  * 聊天消息管理
@@ -79,7 +80,14 @@ export function useChatMessages(chatTarget, chatType, friends, messageAreaRef, u
         ? await getGroupHistory(chatTarget.value.groupId, { page: currentPage.value, size: 20 })
         : await getChatHistory(chatTarget.value.userId, { page: currentPage.value, size: 20 });
       if (res.code === 200 && res.data) {
-        const newMsgs = res.data.content || [];
+        // 后端 v2.6+：撤回消息保留在历史中，isDeleted=true，前端据此渲染撤回占位
+        const newMsgs = (res.data.content || []).map(m => {
+          if (m.isDeleted || m.recalled) {
+            return { ...m, recalled: true };
+          }
+          return m;
+        });
+
         hasMoreMessages.value = currentPage.value < res.data.totalPages;
         if (append) {
           const oldH = messageAreaRef.value?.messageListRef?.scrollHeight || 0;
@@ -179,6 +187,46 @@ export function useChatMessages(chatTarget, chatType, friends, messageAreaRef, u
     }
   }
 
+  /**
+   * 撤回消息
+   * 乐观更新：立即标记为已撤回，API 失败时回滚
+   * @param {Object} message - 要撤回的消息对象
+   */
+  async function recallMessage(message) {
+    if (!message || !message.recordId) return;
+    const isGroup = chatType.value === 'group' || !!message.groupId;
+
+    // 保存原始内容以用于回滚
+    const originalContent = message.content;
+    const wasRecalled = message.recalled;
+
+    // 乐观更新
+    message.recalled = true;
+
+    try {
+      if (isGroup) {
+        await recallGroupMessage(message.groupId, message.recordId);
+      } else {
+        await recallMessageApi(message.recordId);
+      }
+      // 持久化撤回完整元数据，用于后续历史加载时合成占位气泡
+      addRecalledMessage({
+        recordId: message.recordId,
+        senderId: message.senderId,
+        senderName: message.senderName,
+        sendTime: message.sendTime,
+        chatType: isGroup ? 'group' : 'friend',
+        targetId: isGroup ? message.groupId : (message.receiverId || chatTarget.value?.userId),
+      });
+      // WS 会回传 MESSAGE_RECALL，handler 做幂等处理
+    } catch (e) {
+      // 回滚乐观更新
+      message.recalled = wasRecalled;
+      message.content = originalContent;
+      toast.error(e?.message || '撤回失败，请重试');
+    }
+  }
+
   // ==================== WebSocket 事件处理 ====================
   /**
    * 处理 WebSocket 收到的私聊消息
@@ -270,8 +318,58 @@ export function useChatMessages(chatTarget, chatType, friends, messageAreaRef, u
     messages.value.push(newMsg);
 
     if (isCurrentChat) {
+      wsManager.send({ type: 'GROUP_READ_RECEIPT', groupId, recordId });
       nextTick(() => messageAreaRef.value?.scrollToBottom());
     }
+  }
+
+  /**
+   * 处理消息撤回通知（S→C）
+   * - 自己撤回的回传 → 已乐观标记，幂等处理
+   * - 他人撤回的通知 → 标记消息为已撤回
+   * - 无论消息是否在当前列表中，均持久化 recordId，确保历史加载时可识别
+   */
+  function handleWsMessageRecall(msg) {
+    const { recordId, senderId, senderName } = msg;
+
+    // 持久化撤回完整元数据，用于后续历史加载时合成占位气泡
+    const isGroupRecall = !!msg.groupId;
+    // 私聊时 targetId = 对方 userId（好友 ID），群聊时 = groupId
+    const friendTargetId = msg.receiverId
+      ? (senderId === userStore.userId ? msg.receiverId : senderId)
+      : 0;
+    addRecalledMessage({
+      recordId,
+      senderId,
+      senderName,
+      sendTime: msg.sendTime || new Date().toISOString(),
+      chatType: isGroupRecall ? 'group' : 'friend',
+      targetId: isGroupRecall ? msg.groupId : friendTargetId,
+    });
+
+    const message = messages.value.find(m => m.recordId === recordId);
+    if (!message) return;
+    // 幂等处理：已撤回则跳过
+    if (message.recalled) return;
+    message.recalled = true;
+
+    // 更新侧边栏最后一条消息（好友列表）
+    const friendId = msg.receiverId
+      ? (senderId === userStore.userId ? msg.receiverId : senderId)
+      : null;
+    if (friendId) {
+      updateFriendLastMessage(friendId, senderName + '撤回了一条消息', msg.sendTime);
+    }
+  }
+
+  /**
+   * 处理群聊已读回执（S→C，服务端推送）
+   * 当前主要方向是 C→S，此 handler 用于服务端未来可能推送的已读确认
+   */
+  function handleWsGroupReadReceipt(msg) {
+    const { recordId } = msg;
+    const message = messages.value.find(m => m.recordId === recordId);
+    if (message) message.readStatus = true;
   }
 
   // ==================== WebSocket 生命周期 ====================
@@ -279,12 +377,16 @@ export function useChatMessages(chatTarget, chatType, friends, messageAreaRef, u
     wsManager.on('PRIVATE_MESSAGE', handleWsPrivateMessage);
     wsManager.on('READ_RECEIPT', handleWsReadReceipt);
     wsManager.on('GROUP_MESSAGE', handleWsGroupMessage);
+    wsManager.on('MESSAGE_RECALL', handleWsMessageRecall);
+    wsManager.on('GROUP_READ_RECEIPT', handleWsGroupReadReceipt);
   });
 
   onBeforeUnmount(() => {
     wsManager.off('PRIVATE_MESSAGE', handleWsPrivateMessage);
     wsManager.off('READ_RECEIPT', handleWsReadReceipt);
     wsManager.off('GROUP_MESSAGE', handleWsGroupMessage);
+    wsManager.off('MESSAGE_RECALL', handleWsMessageRecall);
+    wsManager.off('GROUP_READ_RECEIPT', handleWsGroupReadReceipt);
   });
 
   return {
@@ -299,5 +401,6 @@ export function useChatMessages(chatTarget, chatType, friends, messageAreaRef, u
     loadChatHistory,
     onSendMessage,
     handleScroll,
+    recallMessage,
   };
 }

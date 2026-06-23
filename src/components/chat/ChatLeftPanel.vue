@@ -23,19 +23,23 @@
     <!-- 列表卡片 -->
     <div class="list-card glass-card">
       <!-- 好友分区 -->
-      <div class="list-section" :class="{ collapsed: !friendsExpanded }">
-        <div class="card-header" @click="$emit('toggle-friends')">
-          <span class="card-title">好友</span>
-          <div class="header-actions">
+      <div class="list-section invite-highlight" :class="{ collapsed: !friendsExpanded, 'invite-mode': inviteMode }">
+        <div class="card-header" @click="!inviteMode && $emit('toggle-friends')">
+          <span class="card-title">{{ inviteMode ? '🎯 邀请好友' : '好友' }}</span>
+          <div class="header-actions" v-if="!inviteMode">
             <button class="card-action-btn" @click.stop="$emit('open-side-panel', 'friend')" title="添加好友">
               <el-icon><Plus /></el-icon>
             </button>
             <el-icon class="collapse-icon" :class="{ expanded: friendsExpanded }"><ArrowDown /></el-icon>
           </div>
         </div>
+        <!-- 邀请模式提示 -->
+        <div v-if="inviteMode" class="invite-hint">
+          选择要邀请加入「{{ inviteGroupName }}」的好友
+        </div>
         <div class="section-body">
           <div class="section-body-inner">
-            <div class="card-search">
+            <div class="card-search" v-if="!inviteMode">
               <input type="text" class="form-input search-input" placeholder="搜索好友..."
                      v-model="friendSearch" />
               <el-icon class="search-icon"><Search /></el-icon>
@@ -49,8 +53,9 @@
               </div>
               <div v-else v-for="f in filteredFriends" :key="'fr-' + f.userId"
                    class="conversation-item"
-                   :class="{ active: selectedFriendId === f.userId && chatType === 'friend' }"
-                   @click="$emit('select-friend', f)">
+                   :class="{ active: selectedFriendId === f.userId && chatType === 'friend', 'invite-item': inviteMode, 'invite-checked': inviteSelectedIds[f.userId] }"
+                   @click="inviteMode ? (inviteSelectedIds[f.userId] = !inviteSelectedIds[f.userId]) : $emit('select-friend', f)">
+                <el-checkbox v-if="inviteMode" :model-value="!!inviteSelectedIds[f.userId]" class="invite-checkbox" @click.stop />
                 <div class="conv-avatar avatar avatar-sm"
                      :class="f.isOnline ? 'online' : 'offline'"
                      :style="{ background: 'linear-gradient(135deg, #11998e, #38ef7d)' }">
@@ -67,6 +72,21 @@
                     <span v-if="f.unreadCount" class="unread-badge">{{ f.unreadCount }}</span>
                   </div>
                 </div>
+              </div>
+            </div>
+            <!-- 邀请操作栏 -->
+            <div v-if="inviteMode" class="invite-actions">
+              <textarea class="form-input invite-message-input" placeholder="附言（选填）"
+                        v-model="inviteMessage" rows="2" maxlength="200"></textarea>
+              <div class="invite-actions-btns">
+                <button class="invite-cancel-btn" @click="inviteSelectedIds = {}; inviteMessage = ''; $emit('cancel-invite')">
+                  取消
+                </button>
+                <button class="submit-button" style="width:auto;padding:8px 24px;font-size:13px"
+                        :disabled="!hasInviteSelection"
+                        @click="handleConfirmInvite">
+                  邀请
+                </button>
               </div>
             </div>
           </div>
@@ -216,6 +236,10 @@ const props = defineProps({
   activeView: { type: String, default: 'chat' },
   mobileShow: { type: Boolean, default: false },
   loadingFriends: { type: Boolean, default: false },
+  inviteMode: { type: Boolean, default: false },
+  inviteGroupName: { type: String, default: '' },
+  /** 邀请模式下目标群已有的成员 userId 列表，用于过滤已在群中的好友 */
+  inviteGroupMemberIds: { type: Array, default: () => [] },
 });
 
 const emit = defineEmits([
@@ -223,10 +247,13 @@ const emit = defineEmits([
   'toggle-friends', 'toggle-groups', 'toggle-notifications',
   'group-action',
   'logout', 'open-side-panel', 'open-notifications', 'open-group-notifications', 'open-profile',
+  'confirm-invite', 'cancel-invite',
 ]);
 
 // ==================== 内部状态 ====================
 const friendSearch = ref('');
+const inviteSelectedIds = ref({});  // { [userId]: true }
+const inviteMessage = ref('');
 const groupPlusBtnRef = ref(null);
 
 // 群聊下拉菜单
@@ -239,6 +266,10 @@ const filteredFriends = computed(() => {
     const q = friendSearch.value.toLowerCase();
     list = list.filter(f => f.userName?.toLowerCase().includes(q) || f.userAccount?.includes(q));
   }
+  // 邀请模式下排除已在目标群中的好友
+  if (props.inviteMode && props.inviteGroupMemberIds?.length) {
+    list = list.filter(f => !props.inviteGroupMemberIds.includes(f.userId));
+  }
   return list.sort((a, b) => {
     const tA = a.lastMessageTime || '';
     const tB = b.lastMessageTime || '';
@@ -247,6 +278,20 @@ const filteredFriends = computed(() => {
     return 0;
   });
 });
+
+/** 是否至少选中了一个好友 */
+const hasInviteSelection = computed(() => Object.values(inviteSelectedIds.value).some(Boolean));
+
+function handleConfirmInvite() {
+  const userIds = Object.entries(inviteSelectedIds.value)
+    .filter(([, v]) => v)
+    .map(([k]) => Number(k));
+  if (!userIds.length) return;
+  emit('confirm-invite', { userIds, message: inviteMessage.value.trim() || '' });
+  // 重置
+  inviteSelectedIds.value = {};
+  inviteMessage.value = '';
+}
 
 // ==================== 群聊菜单 ====================
 function handleGroupAction(action) {
@@ -540,6 +585,82 @@ function handleGroupAction(action) {
 
 .notification-avatar {
   color: #fff;
+}
+
+/* ==================== 邀请模式 ==================== */
+.list-section.invite-mode {
+  border: 2px solid rgba(56, 239, 125, 0.5);
+  border-radius: 14px;
+  background: rgba(56, 239, 125, 0.06);
+  box-shadow: 0 0 20px rgba(56, 239, 125, 0.12);
+}
+
+.invite-highlight .card-header {
+  background: rgba(56, 239, 125, 0.15);
+}
+
+.invite-hint {
+  padding: 6px 14px;
+  font-size: 12px;
+  color: #11998e;
+  font-weight: 500;
+  background: rgba(17, 153, 142, 0.06);
+}
+
+.invite-item {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.invite-item:hover {
+  background: rgba(17, 153, 142, 0.06);
+}
+
+.invite-item.invite-checked {
+  background: rgba(56, 239, 125, 0.12);
+}
+
+.invite-checkbox {
+  pointer-events: none;
+  margin-right: 4px;
+}
+
+.invite-actions {
+  padding: 10px 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.invite-message-input {
+  resize: none;
+  font-size: 12px !important;
+  padding: 8px 10px !important;
+  border-radius: 8px !important;
+}
+
+.invite-actions-btns {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.invite-cancel-btn {
+  padding: 8px 20px;
+  font-size: 13px;
+  color: #999;
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.invite-cancel-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: #666;
 }
 
 /* ==================== 响应式 ==================== */

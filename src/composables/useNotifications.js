@@ -10,7 +10,7 @@ import {
   getReceivedRequests,
   getSentRequests,
 } from '@/api/friend';
-import { handleJoinRequest, getJoinRequests } from '@/api/group';
+import { handleJoinRequest, getJoinRequests, handleGroupInvite, getReceivedInvites } from '@/api/group';
 import { wsManager } from '@/utils/websocket';
 import { getLastReadAt, updateLastReadAt, computeIsRead } from '@/utils/notificationReadState';
 import { loadInteractedGroups, addInteractedGroup, mergeInteractedGroups } from '@/utils/interactedGroups';
@@ -43,6 +43,9 @@ export function useNotifications({ loadFriends, loadGroups, groups, activeView, 
 
   // 群聊加群申请（群主视角）
   const joinGroupRequests = ref([]);
+
+  // 群聊入群邀请（被邀请者视角）
+  const groupInvites = ref([]);
 
   /** 通知已读判断委托给 notificationReadState.computeIsRead */
 
@@ -250,6 +253,50 @@ export function useNotifications({ loadFriends, loadGroups, groups, activeView, 
     }
   }
 
+  /**
+   * 从后端 REST 加载收到的入群邀请历史（被邀请者视角）
+   * GET /api/group/invites/received 返回当前用户收到的所有邀请
+   * 按 inviteId 去重合并到 groupInvites，仅加载状态为 0（待处理）的邀请
+   */
+  async function loadGroupInvitesHistory() {
+    try {
+      const res = await getReceivedInvites({ page: 1, size: 50 });
+      if (res.code === 200 && res.data) {
+        const list = Array.isArray(res.data) ? res.data : (res.data.content || []);
+        let added = 0;
+        for (const item of list) {
+          // 仅加载待处理的邀请
+          if (item.status !== 0) continue;
+          const inviteId = item.inviteId || item.id;
+          if (!inviteId) continue;
+          // 去重
+          if (groupInvites.value.some(i => i.inviteId === inviteId)) continue;
+          groupInvites.value.push({
+            _key: `grp-invite-${inviteId}`,
+            _type: 'group-invite',
+            inviteId,
+            groupId: item.groupId,
+            groupName: item.groupName || `群聊${item.groupId}`,
+            senderId: item.inviterId || 0,
+            senderName: item.inviterName || '',
+            message: item.message || '',
+            sendTime: item.createTime || new Date().toISOString(),
+            isRead: computeIsRead(item.createTime || new Date().toISOString(), activeView.value === 'notifications-group'),
+          });
+          added++;
+        }
+        if (added > 0) console.log('[通知] 加载到', added, '条待处理入群邀请');
+      }
+    } catch (e) {
+      console.error('[通知] 加载入群邀请历史失败:', e?.message || e);
+    }
+  }
+
+  /** 标记所有入群邀请为已读 */
+  function markAllGroupInvitesAsRead() {
+    groupInvites.value.forEach(i => { i.isRead = true; });
+  }
+
   // ==================== WebSocket 事件处理 ====================
   /**
    * 处理 WebSocket 好友申请通知
@@ -442,7 +489,89 @@ export function useNotifications({ loadFriends, loadGroups, groups, activeView, 
     }
   }
 
+  /**
+   * 处理入群邀请通知（被邀请者视角）
+   * WS 消息格式: { type: 'GROUP_INVITE', senderId, senderName, groupId, groupName, inviteId, message, sendTime }
+   */
+  function handleWsGroupInvite(msg) {
+    console.log('[通知] 收到 WS GROUP_INVITE:', JSON.stringify(msg));
+    const { senderId, senderName, groupId, groupName, message, sendTime } = msg;
+    const resolvedGroupName = groupName || `群聊${groupId}`;
+    // inviteId 字段名兼容：后端 WS 可能使用 inviteId 或 id
+    const inviteId = msg.inviteId || msg.id;
+    if (!inviteId) {
+      console.warn('[通知] GROUP_INVITE 缺少 inviteId，无法存储到通知列表，原始消息:', JSON.stringify(msg));
+      // toast 仍然显示，但用户需刷新后在通知面板中操作
+      toast.info(`${senderName} 邀请你加入「${resolvedGroupName}」（请刷新后查看通知面板操作）`);
+      return;
+    }
+    // 去重
+    if (groupInvites.value.some(i => i.inviteId === inviteId)) return;
+    groupInvites.value.unshift({
+      _key: `grp-invite-${inviteId}`,
+      _type: 'group-invite',
+      inviteId,
+      groupId,
+      groupName: resolvedGroupName,
+      senderId,
+      senderName,
+      message: message || '',
+      sendTime: sendTime || new Date().toISOString(),
+      isRead: computeIsRead(sendTime || new Date().toISOString(), activeView.value === 'notifications-group'),
+    });
+    if (groupInvites.value.length > 50) {
+      groupInvites.value = groupInvites.value.slice(0, 50);
+    }
+    toast.info(`${senderName} 邀请你加入「${resolvedGroupName}」`);
+  }
+
+  /** 处理入群邀请（接受/拒绝） */
+  async function onHandleGroupInvite(inviteId, groupId, accept) {
+    if (!inviteId || !groupId) {
+      toast.error('邀请信息不完整，请刷新后重试');
+      return;
+    }
+    try {
+      const res = await handleGroupInvite(groupId, inviteId, accept);
+      if (res.code === 200) {
+        const item = groupInvites.value.find(i => i.inviteId === inviteId);
+        const groupName = item?.groupName || `群聊${groupId}`;
+        if (accept) {
+          toast.success(`已加入「${groupName}」`);
+          if (loadGroups) loadGroups({ silent: true });
+        } else {
+          toast.info(`已拒绝加入「${groupName}」`);
+        }
+        // 移除已处理的邀请
+        groupInvites.value = groupInvites.value.filter(i => i.inviteId !== inviteId);
+      }
+    } catch (e) {
+      toast.error(e?.message || '操作失败，请重试');
+    }
+  }
+
+  /**
+   * 处理入群邀请结果通知（邀请者视角）
+   * WS 消息: { type: 'GROUP_INVITE_RESULT', inviteId, groupId, groupName, inviteeId, inviteeName, accepted: true/false, sendTime }
+   */
+  function handleWsGroupInviteResult(msg) {
+    console.log('[通知] 收到 WS GROUP_INVITE_RESULT:', JSON.stringify(msg));
+    const { inviteeName, groupName, accepted } = msg;
+    const group = groupName || `群聊${msg.groupId}`;
+    if (accepted) {
+      toast.success(`「${inviteeName || '对方'}」已接受你的入群邀请，加入「${group}」`);
+      if (loadGroups) loadGroups({ silent: true });
+    } else {
+      toast.info(`「${inviteeName || '对方'}」拒绝了你的入群邀请（「${group}」）`);
+    }
+    // 防御性清理：如果邀请者侧也存了该邀请记录，移除之
+    const idx = groupInvites.value.findIndex(i => i.inviteId === msg.inviteId);
+    if (idx !== -1) groupInvites.value.splice(idx, 1);
+  }
+
   // 包装函数（确保 cleanup 时能正确移除最新闭包）
+  const _wsGroupInvite = (msg) => handleWsGroupInvite(msg);
+  const _wsGroupInviteResult = (msg) => handleWsGroupInviteResult(msg);
   const _wsGroupMemberJoin = (msg) => handleWsGroupMemberJoin(msg);
   const _wsJoinGroupRequestResult = (msg) => handleWsJoinGroupRequestResult(msg);
 
@@ -459,6 +588,8 @@ export function useNotifications({ loadFriends, loadGroups, groups, activeView, 
     wsManager.on('JOIN_GROUP_REQUEST', _wsJoinGroupRequest);
     wsManager.on('JOIN_GROUP_REQUEST_RESULT', _wsJoinGroupRequestResult);
     wsManager.on('GROUP_MEMBER_JOIN', _wsGroupMemberJoin);
+    wsManager.on('GROUP_INVITE', _wsGroupInvite);
+    wsManager.on('GROUP_INVITE_RESULT', _wsGroupInviteResult);
   });
 
   onBeforeUnmount(() => {
@@ -467,6 +598,8 @@ export function useNotifications({ loadFriends, loadGroups, groups, activeView, 
     wsManager.off('JOIN_GROUP_REQUEST', _wsJoinGroupRequest);
     wsManager.off('JOIN_GROUP_REQUEST_RESULT', _wsJoinGroupRequestResult);
     wsManager.off('GROUP_MEMBER_JOIN', _wsGroupMemberJoin);
+    wsManager.off('GROUP_INVITE', _wsGroupInvite);
+    wsManager.off('GROUP_INVITE_RESULT', _wsGroupInviteResult);
   });
 
   /** 标记所有入群申请为已读 */
@@ -486,6 +619,7 @@ export function useNotifications({ loadFriends, loadGroups, groups, activeView, 
     hasMoreSent,
     pendingRequestCount,
     joinGroupRequests,
+    groupInvites,
     // 通知操作
     openNotifications,
     loadReceivedRequests,
@@ -498,6 +632,9 @@ export function useNotifications({ loadFriends, loadGroups, groups, activeView, 
     loadPendingCount,
     loadJoinRequestsHistory,
     markAllJoinRequestsAsRead,
+    loadGroupInvitesHistory,
+    markAllGroupInvitesAsRead,
+    onHandleGroupInvite,
     // 清理（供 Chat.vue 的 onBeforeUnmount 调用）
     _cleanupNotifications() {
       wsManager.off('FRIEND_REQUEST', _wsFriendRequest);
@@ -505,6 +642,8 @@ export function useNotifications({ loadFriends, loadGroups, groups, activeView, 
       wsManager.off('JOIN_GROUP_REQUEST', _wsJoinGroupRequest);
       wsManager.off('JOIN_GROUP_REQUEST_RESULT', _wsJoinGroupRequestResult);
       wsManager.off('GROUP_MEMBER_JOIN', _wsGroupMemberJoin);
+      wsManager.off('GROUP_INVITE', _wsGroupInvite);
+      wsManager.off('GROUP_INVITE_RESULT', _wsGroupInviteResult);
     },
   };
 }

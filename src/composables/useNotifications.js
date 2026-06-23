@@ -491,17 +491,17 @@ export function useNotifications({ loadFriends, loadGroups, groups, activeView, 
 
   /**
    * 处理入群邀请通知（被邀请者视角）
-   * WS 消息格式: { type: 'GROUP_INVITE', senderId, senderName, groupId, groupName, inviteId, message, sendTime }
+   * WS 消息格式: { type: 'GROUP_INVITE', senderId, senderName, groupId, groupName, requestId, requestMessage, sendTime }
    */
   function handleWsGroupInvite(msg) {
     console.log('[通知] 收到 WS GROUP_INVITE:', JSON.stringify(msg));
-    const { senderId, senderName, groupId, groupName, message, sendTime } = msg;
+    const { senderId, senderName, groupId, groupName, sendTime } = msg;
     const resolvedGroupName = groupName || `群聊${groupId}`;
-    // inviteId 字段名兼容：后端 WS 可能使用 inviteId 或 id
-    const inviteId = msg.inviteId || msg.id;
+    // 后端 WS 使用 requestId（REST 使用 inviteId），requestMessage 为邀请附言
+    const inviteId = msg.requestId;
+    const message = msg.requestMessage || msg.message || '';
     if (!inviteId) {
-      console.warn('[通知] GROUP_INVITE 缺少 inviteId，无法存储到通知列表，原始消息:', JSON.stringify(msg));
-      // toast 仍然显示，但用户需刷新后在通知面板中操作
+      console.warn('[通知] GROUP_INVITE 缺少 requestId，无法存储到通知列表，原始消息:', JSON.stringify(msg));
       toast.info(`${senderName} 邀请你加入「${resolvedGroupName}」（请刷新后查看通知面板操作）`);
       return;
     }
@@ -515,7 +515,7 @@ export function useNotifications({ loadFriends, loadGroups, groups, activeView, 
       groupName: resolvedGroupName,
       senderId,
       senderName,
-      message: message || '',
+      message,
       sendTime: sendTime || new Date().toISOString(),
       isRead: computeIsRead(sendTime || new Date().toISOString(), activeView.value === 'notifications-group'),
     });
@@ -552,20 +552,21 @@ export function useNotifications({ loadFriends, loadGroups, groups, activeView, 
 
   /**
    * 处理入群邀请结果通知（邀请者视角）
-   * WS 消息: { type: 'GROUP_INVITE_RESULT', inviteId, groupId, groupName, inviteeId, inviteeName, accepted: true/false, sendTime }
+   * WS 消息: { type: 'GROUP_INVITE_RESULT', senderId被邀请人, senderName被邀请人, groupId, groupName, content="accepted"/"rejected", requestId, sendTime }
    */
   function handleWsGroupInviteResult(msg) {
     console.log('[通知] 收到 WS GROUP_INVITE_RESULT:', JSON.stringify(msg));
-    const { inviteeName, groupName, accepted } = msg;
+    const { senderName, groupName, content, requestId } = msg;
     const group = groupName || `群聊${msg.groupId}`;
-    if (accepted) {
-      toast.success(`「${inviteeName || '对方'}」已接受你的入群邀请，加入「${group}」`);
+    const isAccepted = content === 'accepted';
+    if (isAccepted) {
+      toast.success(`「${senderName || '对方'}」已接受你的入群邀请，加入「${group}」`);
       if (loadGroups) loadGroups({ silent: true });
     } else {
-      toast.info(`「${inviteeName || '对方'}」拒绝了你的入群邀请（「${group}」）`);
+      toast.info(`「${senderName || '对方'}」拒绝了你的入群邀请（「${group}」）`);
     }
     // 防御性清理：如果邀请者侧也存了该邀请记录，移除之
-    const idx = groupInvites.value.findIndex(i => i.inviteId === msg.inviteId);
+    const idx = groupInvites.value.findIndex(i => i.inviteId === requestId);
     if (idx !== -1) groupInvites.value.splice(idx, 1);
   }
 

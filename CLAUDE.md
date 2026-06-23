@@ -297,8 +297,8 @@ All shared design tokens in `assets/shared.css`:
 | `GROUP_OWNER_TRANSFERRED` | receive | `useFriendList` | Shows toast with old→new owner names, refreshes group list silently |
 | `JOIN_GROUP_REQUEST` | receive | `useNotifications` | Store to `joinGroupRequests[]` (max 50) + toast (sent to group owners — backend v2.1). Resolves group name from `groups` ref with WS content field fallback. |
 | `JOIN_GROUP_REQUEST_RESULT` | receive | `useNotifications` | Updates self-join request status (accepted→1, rejected→2) + toast + refreshes group list if accepted. `GROUP_MEMBER_JOIN` serves as fallback. |
-| `GROUP_INVITE` | receive | `useNotifications` | Store to `groupInvites[]` (max 50) + toast（被邀请者视角）. REST 历史通过 `GET /api/group/invites/received` 加载（`loadGroupInvitesHistory()`）. 刷新后持久化可见. |
-| `GROUP_INVITE_RESULT` | receive | `useNotifications` | toast 通知邀请者被邀请人已接受/拒绝（邀请者视角）. 防御性清理 `groupInvites[]` 中的对应条目. |
+| `GROUP_INVITE` | receive | `useNotifications` | Store to `groupInvites[]` (max 50) + toast（被邀请者视角）. WS 字段：`requestId`(邀请ID)、`requestMessage`(附言). REST 历史通过 `GET /api/group/invites/received` 加载（`loadGroupInvitesHistory()`）. 刷新后持久化可见. |
+| `GROUP_INVITE_RESULT` | receive | `useNotifications` | toast 通知邀请者被邀请人已接受/拒绝（邀请者视角）. WS 字段：`requestId`、`content`("accepted"/"rejected")、`senderName`(被邀请人). 防御性清理 `groupInvites[]` 中的对应条目. |
 | `ERROR` | receive | `Chat.vue` + `wsManager` (fallback) | Chat.vue handles auth errors → force logout; wsManager provides default `console.error` for any unhandled types |
 
 Types are defined as JSDoc `@typedef` in `types/index.js`. All WS message types the client sends (`PRIVATE_MESSAGE`, `GROUP_MESSAGE`, `READ_RECEIPT`) are sent as `{ type, ...data }` objects via `wsManager.send()`.

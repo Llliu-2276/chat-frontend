@@ -1,7 +1,7 @@
 # 错误码文档
 
-> **文档版本**: v1.1  
-> **更新日期**: 2026-06-01  
+> **文档版本**: v1.2  
+> **更新日期**: 2026-06-23  
 > **关联代码**: [ErrorCode.java](../src/main/java/org/example/liu/chatbackend/common/ErrorCode.java)
 
 ## 1. 请求成功 (2xx)

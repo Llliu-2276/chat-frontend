@@ -3,7 +3,7 @@
 > **文档版本**: v2.10  
 > **更新日期**: 2026-06-22  
 > **适用对象**: 前端开发工程师  
-> **后端技术栈**: Spring Boot 4.0.2 + JWT + Redis + MySQL
+> **后端技术栈**: Spring Boot 4.0.7 + JWT + Redis + MySQL
 
 ---
 
@@ -1990,11 +1990,7 @@ Authorization: Bearer {token}
 }
 ```
 
-**错误响应**：
-| code | message | 说明 |
-|------|---------|------|
-| 404 | 群聊不存在 | groupId无效 |
-| 409 | 您已经是该群聊的成员，无需重复加入 | 重复加入 |
+> ⚠️ **v2.1 起已废弃直接入群**。加入群聊已迁移至 3.6.18 申请加入群聊（需审批）。此处保留仅为历史参考。
 
 ---
 
@@ -2345,6 +2341,9 @@ GET /api/user/blocked-list
 - ✅ 群主转让通知（`GROUP_OWNER_TRANSFERRED`）
 - ✅ 群聊解散通知（`GROUP_DISBANDED`）
 - ✅ 入群申请通知（`JOIN_GROUP_REQUEST` — 推送给群主）
+- ✅ 入群申请结果通知（`JOIN_GROUP_REQUEST_RESULT` — 推送给申请人）
+- ✅ 入群邀请通知（`GROUP_INVITE` — 推送给被邀请人）
+- ✅ 入群邀请结果通知（`GROUP_INVITE_RESULT` — 推送给邀请人）
 
 **前端配合要点**：
 - 登录成功后建立 WebSocket 连接（`ws://localhost:8080/ws/chat?token=xxx`）

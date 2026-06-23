@@ -87,7 +87,9 @@
 | 群通知列表 | GET | `/api/group/{groupId}/notifications`（成员看全部/非成员看相关） | ✅ |
 | 踢出群成员 | DELETE | `/api/group/{groupId}/member/{targetUserId}` | ✅ |
 | 转让群主 | POST | `/api/group/{groupId}/transfer/{targetUserId}` | ✅ |
-| 邀请好友入群 | POST | `/api/group/{groupId}/invite/{inviteeId}` | ✅ |
+| 邀请好友入群 | POST | `/api/group/{groupId}/invite/{inviteeId}` (Body可选: `{message}`) | ✅ |
+| 查看入群邀请 | GET | `/api/group/invites/received?page=1&size=20` | ✅ |
+| 处理入群邀请 | POST | `/api/group/{groupId}/invite/{inviteId}/handle` | ✅ |
 | 撤回群聊消息 | POST | `/api/group/{groupId}/message/{recordId}/recall` | ✅ |
 | 搜索群聊消息 | GET | `/api/group/history/{groupId}/search?keyword=` | ✅ |
 
@@ -129,6 +131,8 @@
 | `GROUP_DISBANDED` | S→C | 群聊解散通知（字段：groupId, senderId群主, senderName, content, sendTime） |
 | `MESSAGE_RECALL` | S→C | 消息撤回通知（字段：senderId, senderName, recordId, groupId/receiverId） |
 | `GROUP_OWNER_TRANSFERRED` | S→C | 群主转让通知（字段：groupId, senderId旧群主, targetUserId新群主） |
+| `GROUP_INVITE` | S→C | 入群邀请通知（字段：senderId邀请人, senderName, groupId, groupName, requestId, sendTime, requestMessage） |
+| `GROUP_INVITE_RESULT` | S→C | 入群邀请结果通知（字段：senderId被邀请人, senderName, groupId, groupName, content=accepted/rejected, requestId, sendTime） |
 | `ERROR` | S→C | 错误通知 |
 
 > 详细对接说明见 [WEBSOCKET_UPGRADE.md](./WEBSOCKET_UPGRADE.md)

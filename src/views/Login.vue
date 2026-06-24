@@ -54,9 +54,7 @@
           </div>
 
           <button type="submit" class="submit-button" :disabled="registerLoading">
-            <span v-if="registerLoading" class="btn-loading-icon">
-              <img src="../assets/loading.png" alt="Loading">
-            </span>
+            <el-icon v-if="registerLoading" class="btn-loading-icon"><Loading /></el-icon>
             {{ registerLoading ? '注册中...' : '注册' }}
           </button>
         </form>
@@ -90,9 +88,7 @@
           </div>
 
           <button type="submit" class="submit-button" :disabled="loginLoading">
-            <span v-if="loginLoading" class="btn-loading-icon">
-              <img src="../assets/loading.png" alt="Loading">
-            </span>
+            <el-icon v-if="loginLoading" class="btn-loading-icon"><Loading /></el-icon>
             {{ loginLoading ? '登录中...' : '登录' }}
           </button>
         </form>
@@ -158,6 +154,7 @@ import { ElMessageBox } from 'element-plus';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import { useDragMask } from '@/composables/useDragMask';
+import { Loading } from '@element-plus/icons-vue';
 
 const router = useRouter();
 const userStore = useUserStore();
@@ -455,19 +452,6 @@ async function handleRegister() {
 /* 表单输入框样式由 shared.css 提供 */
 
 /* 提交按钮样式由 shared.css 提供（.submit-button） */
-
-/* 按钮加载图标容器 */
-.btn-loading-icon {
-  display: inline-flex;
-  align-items: center;
-}
-
-/* 限制 loading.png 图片尺寸（登录页特定） */
-.btn-loading-icon img {
-  width: 18px;
-  height: 18px;
-  object-fit: contain;
-}
 
 /* 提交按钮样式由 shared.css 提供 */
 

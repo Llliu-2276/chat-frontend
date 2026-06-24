@@ -15,7 +15,7 @@
         <span class="user-bar-name">{{ userName }}</span>
       </div>
       <button class="icon-btn" @click="$emit('logout')" :disabled="isLoggingOut" title="登出">
-        <span v-if="isLoggingOut" class="loading-icon"><img src="@/assets/loading.png" alt="Loading"></span>
+        <el-icon v-if="isLoggingOut" class="loading-icon"><Loading /></el-icon>
         <el-icon v-else><SwitchButton /></el-icon>
       </button>
     </div>
@@ -49,7 +49,7 @@
             </div>
             <div class="conversation-list">
               <div v-if="loadingFriends" class="list-loading">
-                <span class="loading-icon"><img src="@/assets/loading.png" alt="Loading"></span>
+                <el-icon class="loading-icon"><Loading /></el-icon>
               </div>
               <div v-else-if="filteredFriends.length === 0" class="list-empty">
                 <p>{{ friendSearch ? '未找到好友' : '暂无好友' }}</p>
@@ -216,7 +216,7 @@
 
 <script setup>
 import { ref, computed } from 'vue';
-import { SwitchButton, Plus, ArrowDown, Edit, Search, Bell, UserFilled, Aim } from '@element-plus/icons-vue';
+import { SwitchButton, Plus, ArrowDown, Edit, Search, Bell, UserFilled, Aim, Loading } from '@element-plus/icons-vue';
 import { formatTime } from '@/utils/time';
 import { useDropdown } from '@/composables/useDropdown';
 

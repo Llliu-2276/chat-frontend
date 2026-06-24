@@ -66,9 +66,7 @@
       <button class="submit-button profile-password-btn"
               :disabled="!canChangePassword || profileLoading"
               @click="submitChangePassword">
-        <span v-if="profileLoading" class="loading-icon">
-          <img src="@/assets/loading.png" alt="Loading">
-        </span>
+        <el-icon v-if="profileLoading" class="loading-icon"><Loading /></el-icon>
         确认修改
       </button>
     </div>
@@ -83,7 +81,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { ArrowRight, Edit, Select, CloseBold, Lock, SwitchButton } from '@element-plus/icons-vue';
+import { ArrowRight, Edit, Select, CloseBold, Lock, SwitchButton, Loading } from '@element-plus/icons-vue';
 
 defineOptions({ name: 'ProfileSelf' });
 

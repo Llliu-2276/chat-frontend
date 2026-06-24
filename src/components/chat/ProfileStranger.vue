@@ -16,16 +16,14 @@
   <button class="submit-button profile-action-btn"
           :disabled="profileLoading"
           @click="$emit('add-friend-from-profile', profileUser)">
-    <span v-if="profileLoading" class="loading-icon">
-      <img src="@/assets/loading.png" alt="Loading">
-    </span>
+    <el-icon v-if="profileLoading" class="loading-icon"><Loading /></el-icon>
     <el-icon v-else><UserFilled /></el-icon>
     {{ profileLoading ? '发送中...' : '添加好友' }}
   </button>
 </template>
 
 <script setup>
-import { UserFilled } from '@element-plus/icons-vue';
+import { UserFilled, Loading } from '@element-plus/icons-vue';
 
 defineOptions({ name: 'ProfileStranger' });
 

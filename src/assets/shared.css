@@ -113,25 +113,15 @@
 }
 
 .btn-loading-icon {
-  display: inline-block;
+  display: inline-flex;
   animation: btn-loading-spin 1s linear infinite;
-}
-
-.btn-loading-icon img {
-  width: 18px;
-  height: 18px;
-  object-fit: contain;
+  font-size: 18px;
 }
 
 .loading-icon {
-  display: inline-block;
+  display: inline-flex;
   animation: spin 1s linear infinite;
-}
-
-.loading-icon img {
-  width: 16px;
-  height: 16px;
-  object-fit: contain;
+  font-size: 16px;
 }
 
 /* ==================== 头像 ==================== */

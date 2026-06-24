@@ -63,7 +63,7 @@
         {{ selectMode === 'transfer' ? '选择要转让群主的成员' : '选择要踢出的成员' }}
       </div>
       <div v-if="loadingMembers" class="profile-member-loading">
-        <span class="loading-icon"><img src="@/assets/loading.png" alt="Loading"></span>
+        <el-icon class="loading-icon"><Loading /></el-icon>
         <span>加载中...</span>
       </div>
       <div v-else class="profile-member-list">
@@ -145,7 +145,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { ChatDotRound, Delete, Plus, Switch, Remove, Select, CloseBold, Edit } from '@element-plus/icons-vue';
+import { ChatDotRound, Delete, Plus, Switch, Remove, Select, CloseBold, Edit, Loading } from '@element-plus/icons-vue';
 import { getGroupInfo, getGroupMembers } from '@/api/group';
 
 defineOptions({ name: 'ProfileGroup' });

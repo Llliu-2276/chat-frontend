@@ -29,7 +29,7 @@
               </div>
               <div class="panel-results">
                 <div v-if="searching" class="list-loading">
-                  <span class="loading-icon"><img src="@/assets/loading.png" alt="Loading"></span>
+                  <el-icon class="loading-icon"><Loading /></el-icon>
                 </div>
                 <div v-else-if="searchResults.length === 0 && searchKeyword" class="list-empty">
                   <p>未找到用户</p>
@@ -89,7 +89,7 @@
               </div>
               <div class="panel-results">
                 <div v-if="groupSearching" class="list-loading">
-                  <span class="loading-icon"><img src="@/assets/loading.png" alt="Loading"></span>
+                  <el-icon class="loading-icon"><Loading /></el-icon>
                 </div>
                 <div v-else-if="groupSearchResults.length === 0 && searchKeyword" class="list-empty">
                   <p>未找到群聊</p>
@@ -152,7 +152,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { ArrowLeft, Search } from '@element-plus/icons-vue';
+import { ArrowLeft, Search, Loading } from '@element-plus/icons-vue';
 import ChatProfileCard from '@/components/chat/ChatProfileCard.vue';
 
 defineOptions({ name: 'ChatSidePanel' });

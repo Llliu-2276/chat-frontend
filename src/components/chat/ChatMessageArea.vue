@@ -46,7 +46,7 @@
       <!-- 消息流 -->
       <div class="message-flow" ref="messageListRef" @scroll="onScroll">
         <div v-if="loadingMore" class="load-more">
-          <span class="loading-icon"><img src="@/assets/loading.png" alt="Loading"></span>
+          <el-icon class="loading-icon"><Loading /></el-icon>
           <span>加载更多...</span>
         </div>
         <div v-if="!hasMoreMessages && messages.length > 0" class="no-more-messages">
@@ -99,7 +99,7 @@
           <span class="shortcut-hint">Enter 发送 · Ctrl+Enter 换行</span>
           <button class="submit-button send-btn" @click="$emit('send', inputText)"
                   :disabled="!inputText.trim() || isSending">
-            <span v-if="isSending" class="loading-icon"><img src="@/assets/loading.png" alt="Loading"></span>
+            <el-icon v-if="isSending" class="loading-icon"><Loading /></el-icon>
             <el-icon v-else><Promotion /></el-icon>
             发送
           </button>
@@ -123,7 +123,7 @@
 
 <script setup>
 import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue';
-import { Promotion, ChatDotSquare, ArrowLeft } from '@element-plus/icons-vue';
+import { Promotion, ChatDotSquare, ArrowLeft, Loading } from '@element-plus/icons-vue';
 import { ElMessageBox } from 'element-plus';
 import { formatTime, insertTimeDividers } from '@/utils/time';
 

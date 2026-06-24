@@ -6,7 +6,7 @@
 <template>
   <div class="bubble-flow">
     <div v-if="isLoading && mergedRequests.length === 0" class="list-loading">
-      <span class="loading-icon"><img src="@/assets/loading.png" alt="Loading"></span>
+      <el-icon class="loading-icon"><Loading /></el-icon>
       <span>加载中...</span>
     </div>
     <div v-else-if="mergedRequests.length === 0" class="list-empty">
@@ -56,9 +56,7 @@
       <div v-if="!hasMoreReceived && !hasMoreSent" class="no-more">— 没有更多了 —</div>
       <button v-else class="btn-accept" :disabled="isLoadingMore" style="align-self:center;padding:8px 24px;font-size:13px"
               @click="$emit('load-more')">
-        <span v-if="isLoadingMore" class="loading-icon">
-          <img src="@/assets/loading.png" alt="Loading">
-        </span>
+        <el-icon v-if="isLoadingMore" class="loading-icon"><Loading /></el-icon>
         {{ isLoadingMore ? '加载中...' : '加载更多' }}
       </button>
     </template>
@@ -67,7 +65,7 @@
 
 <script setup>
 import { computed } from 'vue';
-import { Bell, Select, CloseBold } from '@element-plus/icons-vue';
+import { Bell, Select, CloseBold, Loading } from '@element-plus/icons-vue';
 import { formatTime, insertTimeDividers } from '@/utils/time';
 
 defineOptions({ name: 'ChatNotificationFriend' });

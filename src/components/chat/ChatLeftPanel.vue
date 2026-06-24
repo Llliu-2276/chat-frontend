@@ -23,9 +23,12 @@
     <!-- 列表卡片 -->
     <div class="list-card glass-card">
       <!-- 好友分区 -->
-      <div class="list-section invite-highlight" :class="{ collapsed: !friendsExpanded, 'invite-mode': inviteMode }">
+      <div class="list-section" :class="{ collapsed: !friendsExpanded, 'invite-highlight': inviteMode, 'invite-mode': inviteMode }">
         <div class="card-header" @click="!inviteMode && $emit('toggle-friends')">
-          <span class="card-title">{{ inviteMode ? '🎯 邀请好友' : '好友' }}</span>
+          <span class="card-title">
+            <template v-if="inviteMode"><el-icon class="card-title-icon"><Aim /></el-icon> 邀请好友</template>
+            <template v-else>好友</template>
+          </span>
           <div class="header-actions" v-if="!inviteMode">
             <button class="card-action-btn" @click.stop="$emit('open-side-panel', 'friend')" title="添加好友">
               <el-icon><Plus /></el-icon>
@@ -213,7 +216,7 @@
 
 <script setup>
 import { ref, computed } from 'vue';
-import { SwitchButton, Plus, ArrowDown, Edit, Search, Bell, UserFilled } from '@element-plus/icons-vue';
+import { SwitchButton, Plus, ArrowDown, Edit, Search, Bell, UserFilled, Aim } from '@element-plus/icons-vue';
 import { formatTime } from '@/utils/time';
 import { useDropdown } from '@/composables/useDropdown';
 
@@ -433,6 +436,13 @@ function handleGroupAction(action) {
   font-weight: 700;
   color: #11998e;
   letter-spacing: 0.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.card-title-icon {
+  font-size: 16px;
 }
 
 .card-action-btn {

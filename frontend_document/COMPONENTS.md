@@ -280,6 +280,7 @@ loading.hide();
 **非成员**：基本信息（名称/账号/成员数）+ "加入群聊"按钮
 
 **群主操作按钮**（仅 `profileUser.isOwner` 时显示）：
+- "修改群名称"：群名称右侧铅笔图标，点击进入行内编辑模式（input + 确认/取消按钮），Enter 确认，编辑后 emit `edit-group-name` 触发 `useProfile.handleEditGroupName()`
 - "转让群主"：点击后进入选择模式（`selectMode = 'transfer'`），成员列表每项出现 `el-radio`，选中非群主成员后确认
 - "踢出成员"：同上，`selectMode = 'kick'`，确认后调用 `kickGroupMember` API
 - "邀请好友"：成员列表标题栏显示，emit `open-invite` 触发 Chat.vue 邀请模式
@@ -292,6 +293,7 @@ loading.hide();
 | `transfer-owner` | 转让群主，参数：`targetUserId` |
 | `kick-member` | 踢出成员，参数：`targetUserId` |
 | `open-invite` | 打开邀请好友入群模式 |
+| `edit-group-name` | 编辑群名称，参数：`newName`（字符串） |
 
 **成员列表加载**：`getGroupInfo`（主）→ `getGroupMembers`（降级）。排序：群主优先 → joinDate 升序。群主头像金色渐变 + "群主"标签。
 

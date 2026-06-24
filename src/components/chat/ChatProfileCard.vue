@@ -49,6 +49,7 @@
       @transfer-owner="(member) => $emit('transfer-owner', profileUser, member)"
       @kick-member="(member) => $emit('kick-member', profileUser, member)"
       @open-invite="(group) => $emit('open-invite', group)"
+      @edit-group-name="(newName) => $emit('edit-group-name', profileUser, newName)"
     />
   </div>
 </template>
@@ -73,6 +74,7 @@ defineEmits([
   'send-message-to', 'add-friend-from-profile', 'delete-friend',
   'dissolve-or-leave-group', 'join-group',
   'transfer-owner', 'kick-member', 'open-invite',
+  'edit-group-name',
   'logout',
 ]);
 </script>

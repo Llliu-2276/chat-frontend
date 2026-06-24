@@ -299,7 +299,7 @@ async function handleRegister() {
       try {
         await ElMessageBox.alert(
           `<div class="register-success-card">
-            <div class="register-success-icon">🎉</div>
+            <div class="register-success-icon"><svg viewBox="0 0 24 24" width="48" height="48"><circle cx="12" cy="12" r="12" fill="#67c23a"/><path d="M7 12l3 3 7-7" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
             <div class="register-success-title">注册成功</div>
             <div class="register-success-info">
               <div class="register-success-row">
@@ -316,7 +316,7 @@ async function handleRegister() {
               </div>
             </div>
             <div class="register-success-warning">
-              <span>⚠️ 请牢记账号和密码，账号是登录的唯一凭证</span>
+              <span><svg viewBox="0 0 24 24" width="16" height="16" style="vertical-align:middle;margin-right:2px"><path d="M12 2L1 22h22L12 2z" fill="#e6a23c"/><path d="M11 9h2v6h-2zM11 17h2v2h-2z" fill="#fff"/></svg> 请牢记账号和密码，账号是登录的唯一凭证</span>
             </div>
           </div>`,
           '注册成功',

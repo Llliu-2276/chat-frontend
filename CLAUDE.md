@@ -25,7 +25,9 @@ npm run preview          # Preview production build
 
 Development requires Node.js >= 18 and the Spring Boot backend running on `localhost:8080`.
 
-**Editor setup**: `.vscode/extensions.json` recommends Volar (`Vue.volar`) for Vue 3 IDE support. `.idea/` contains JetBrains settings including Prettier auto-run on save.
+**Editor setup**: `.vscode/extensions.json` recommends Volar (`Vue.volar`) for Vue 3 IDE support. `.idea/` contains JetBrains settings including Prettier auto-run on save. `jsconfig.json` enables `@` path alias resolution in VS Code/WebStorm (targets `ES2020`, `bundler` module resolution).
+
+**Note**: The project has no test infrastructure (no vitest, jest, or other test framework). All verification is manual via the dev server.
 
 ## Environment Config
 
@@ -123,14 +125,15 @@ Despite its name, this composable owns both `friends[]` and `groups[]` reactive 
 
 ### Pending Work (TODO)
 
-Check `.claude/TODO_群聊系统待实现.md` before starting any group-chat related work (note: `.claude/` is gitignored — this file is local-only). The document tracks backend APIs and WebSocket message types that are implemented on the server but not yet wired into the frontend, plus known bugs (B1-B4). Key gaps as of 2026-06-23:
+Check `.claude/TODO_群聊系统待实现.md` before starting any group-chat related work (note: `.claude/` is gitignored — this file is local-only). The document tracks backend APIs and WebSocket message types that are implemented on the server but not yet wired into the frontend. Key gaps as of 2026-06-23:
 
 | Priority | Category | Items | Status |
 |----------|----------|-------|--------|
 | ✅ P0 | 核心功能 | 消息撤回（私聊+群聊）、群聊已读回执 | 已完成（2026-06-23） |
 | ✅ P1 | 群管理 | 群主转让、踢人、邀请入群、群解散通知 | 已完成（2026-06-23） |
-| 🟢 P2 | 增强功能 | 消息搜索、编辑群信息、通知历史、入群申请列表、用户拉黑系统 | 待实现 |
+| 🟢 P2 | 增强功能 | 消息搜索、编辑群信息（✅ 2026-06-24）、通知历史、入群申请列表、用户拉黑系统 | 待实现 |
 | 🟢 P3 | 降级兜底 | 群聊最后消息缺失兜底优化 | 待实现 |
+| 🟢 P4 | 基础设施 | WebSocket 心跳（WS 层 ping/pong，当前仅 HTTP 心跳） | 待实现 |
 
 ## Key Architectural Patterns
 
@@ -229,7 +232,7 @@ Every async function that calls a backend API must follow this pattern:
 
 ### Route Guards
 
-`router/index.js` — `beforeEach` checks `meta.requiresAuth` against localStorage token. Unauthenticated → `/login?redirect=...`. Already-authenticated hitting `/login` → redirect to `/chat`. Three routes only: `/` (redirect to `/login`), `/login`, `/chat`. Profile and search features are handled by ChatSidePanel/ChatProfileCard within the chat page — there are no standalone profile/search routes.
+`router/index.js` — `beforeEach` checks `meta.requiresAuth` against localStorage token. Unauthenticated → `/login?redirect=...`. Already-authenticated hitting `/login` → redirect to `/chat`. Four routes: `/` (redirect to `/login`), `/login`, `/chat`, and `/:pathMatch(.*)*` (catch-all → `/login`). Profile and search features are handled by ChatSidePanel/ChatProfileCard within the chat page — there are no standalone profile/search routes.
 
 ### Global Dependency Injection
 
@@ -301,7 +304,7 @@ All shared design tokens in `assets/shared.css`:
 | `GROUP_INVITE_RESULT` | receive | `useNotifications` | toast 通知邀请者被邀请人已接受/拒绝（邀请者视角）. WS 字段：`requestId`、`content`("accepted"/"rejected")、`senderName`(被邀请人). 防御性清理 `groupInvites[]` 中的对应条目. |
 | `ERROR` | receive | `Chat.vue` + `wsManager` (fallback) | Chat.vue handles auth errors → force logout; wsManager provides default `console.error` for any unhandled types |
 
-Types are defined as JSDoc `@typedef` in `types/index.js`. All WS message types the client sends (`PRIVATE_MESSAGE`, `GROUP_MESSAGE`, `READ_RECEIPT`) are sent as `{ type, ...data }` objects via `wsManager.send()`.
+Types are defined as JSDoc `@typedef` in `types/index.js`. All WS message types the client sends (`PRIVATE_MESSAGE`, `GROUP_MESSAGE`, `READ_RECEIPT`, `GROUP_READ_RECEIPT`, `MESSAGE_RECALL`) are sent as `{ type, ...data }` objects via `wsManager.send()`.
 
 ## Component Communication
 

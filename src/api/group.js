@@ -270,6 +270,20 @@ export function handleGroupInvite(groupId, inviteId, accept) {
 }
 
 /**
+ * 编辑群聊信息（仅群主，目前仅支持修改群名称）
+ * @param {number} groupId - 群组ID
+ * @param {Object} data - { groupName: '新群名称' }，群名称最多16字符
+ * @returns {Promise} 返回更新后的群聊信息
+ */
+export function updateGroupInfo(groupId, data) {
+  return request({
+    url: `/group/${groupId}`,
+    method: 'PUT',
+    data,
+  });
+}
+
+/**
  * 查看收到的入群邀请列表（当前登录用户视角）
  * @param {Object} params - 分页参数 { page, size }
  * @returns {Promise} 返回收到的入群邀请分页数据

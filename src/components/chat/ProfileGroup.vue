@@ -9,7 +9,24 @@
     <div class="profile-info-card">
       <div class="profile-info-row">
         <span class="profile-info-label">群名称</span>
-        <span class="profile-info-value">{{ profileUser?.groupName || '-' }}</span>
+        <template v-if="editingGroupName">
+          <input type="text" class="form-input profile-inline-input"
+                 v-model="editGroupNameValue" maxlength="16"
+                 @keydown.enter="confirmEditGroupName" />
+          <button class="profile-inline-btn confirm" @click="confirmEditGroupName"
+                  :disabled="!editGroupNameValue.trim() || editGroupNameValue.trim() === profileUser.groupName">
+            <el-icon><Select /></el-icon>
+          </button>
+          <button class="profile-inline-btn cancel" @click="cancelEditGroupName">
+            <el-icon><CloseBold /></el-icon>
+          </button>
+        </template>
+        <template v-else>
+          <span class="profile-info-value">{{ profileUser?.groupName || '-' }}</span>
+          <button v-if="profileUser?.isOwner" class="profile-inline-edit-btn" @click="startEditGroupName" title="修改群名称">
+            <el-icon><Edit /></el-icon>
+          </button>
+        </template>
       </div>
       <div class="profile-info-row">
         <span class="profile-info-label">群账号</span>
@@ -57,7 +74,7 @@
                     v-model="selectedMemberId" :value="m.userId" class="profile-member-radio"
                     @click.stop />
           <div class="profile-member-avatar avatar avatar-sm"
-               :style="{ background: m.isOwner ? 'linear-gradient(135deg, #f5af19, #f12711)' : 'linear-gradient(135deg, #11998e, #38ef7d)' }">
+               :style="{ background: 'linear-gradient(135deg, #11998e, #38ef7d)' }">
             {{ (m.userName || '?').charAt(0) }}
           </div>
           <div class="profile-member-info">
@@ -128,7 +145,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { ChatDotRound, Delete, Plus, Switch, Remove } from '@element-plus/icons-vue';
+import { ChatDotRound, Delete, Plus, Switch, Remove, Select, CloseBold, Edit } from '@element-plus/icons-vue';
 import { getGroupInfo, getGroupMembers } from '@/api/group';
 
 defineOptions({ name: 'ProfileGroup' });
@@ -137,7 +154,7 @@ const props = defineProps({
   profileUser: { type: Object, default: null },
   isGroupMember: { type: Boolean, default: false },
 });
-const emit = defineEmits(['send-message-to', 'dissolve-or-leave-group', 'join-group', 'transfer-owner', 'kick-member', 'open-invite']);
+const emit = defineEmits(['send-message-to', 'dissolve-or-leave-group', 'join-group', 'transfer-owner', 'kick-member', 'open-invite', 'edit-group-name']);
 
 // ==================== 选择模式（转让/踢出） ====================
 const selectMode = ref(null); // 'transfer' | 'kick' | null
@@ -163,6 +180,27 @@ function confirmSelectAction() {
     emit('kick-member', member);
   }
   cancelSelectMode();
+}
+
+// ==================== 群名称编辑 ====================
+const editingGroupName = ref(false);
+const editGroupNameValue = ref('');
+
+function startEditGroupName() {
+  editGroupNameValue.value = props.profileUser?.groupName || '';
+  editingGroupName.value = true;
+}
+
+function cancelEditGroupName() {
+  editingGroupName.value = false;
+  editGroupNameValue.value = '';
+}
+
+function confirmEditGroupName() {
+  const trimmed = editGroupNameValue.value.trim();
+  if (!trimmed || trimmed === props.profileUser?.groupName) return;
+  emit('edit-group-name', trimmed);
+  editingGroupName.value = false;
 }
 
 // ==================== 成员列表 ====================
@@ -299,9 +337,10 @@ watch(() => props.profileUser?.groupId, (newId) => {
   font-size: 10px;
   font-weight: 600;
   padding: 1px 6px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #f5af19, #f12711);
-  color: #fff;
+  border-radius: 6px;
+  background: linear-gradient(135deg, rgba(245, 175, 25, 0.22), rgba(56, 239, 125, 0.15));
+  border: 1px solid rgba(197, 160, 60, 0.45);
+  color: #b8932e;
   flex-shrink: 0;
   letter-spacing: 0.5px;
 }
@@ -323,7 +362,7 @@ watch(() => props.profileUser?.groupId, (newId) => {
   color: #11998e;
   background: rgba(17, 153, 142, 0.1);
   border: 1px solid rgba(17, 153, 142, 0.25);
-  border-radius: 10px;
+  border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s ease;
 }

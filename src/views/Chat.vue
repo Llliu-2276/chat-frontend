@@ -129,6 +129,7 @@
         @transfer-owner="(group, member) => handleTransferOwner(group, member)"
         @kick-member="(group, member) => handleKickMember(group, member)"
         @open-invite="openInviteFromProfile"
+        @edit-group-name="(group, newName) => handleEditGroupName(group, newName)"
         @view-profile="viewProfile"
         @logout="handleLogout"
       />
@@ -228,7 +229,7 @@ const {
   openSelfProfile, onViewProfile, onViewGroupProfile,
   handleEditUsername, handleChangePassword, handleDeleteFriend,
   handleDissolveOrLeaveGroup,
-  handleTransferOwner, handleKickMember,
+  handleTransferOwner, handleKickMember, handleEditGroupName,
   handleSendMessageTo: _sendMessageTo, handleAddFriendFromProfile: _addFriendFromProfile,
 } = useProfile({ toast, friends, groups, chatTarget, chatType, resetChat, closeSidePanel, loadFriends, loadGroups, sidePanelMode, groupSubMode, showSidePanel });
 

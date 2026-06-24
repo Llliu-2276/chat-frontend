@@ -139,6 +139,7 @@
                 @transfer-owner="(group, member) => $emit('transfer-owner', group, member)"
                 @kick-member="(group, member) => $emit('kick-member', group, member)"
                 @open-invite="(group) => $emit('open-invite', group)"
+                @edit-group-name="(group, newName) => $emit('edit-group-name', group, newName)"
                 @logout="$emit('logout')"
               />
             </template>
@@ -194,6 +195,7 @@ const emit = defineEmits([
   'transfer-owner',         // 转让群主（profile-group），参数：(group, targetMember)
   'kick-member',            // 踢出成员（profile-group），参数：(group, targetMember)
   'open-invite',            // 打开邀请好友模式（profile-group），参数：group
+  'edit-group-name',        // 编辑群名称（profile-group），参数：(group, newName)
   'view-profile',           // 查看用户/群聊资料（搜索结果点击），参数：user/group
   'logout',                 // 登出（本人资料卡内）
 ]);

@@ -9,7 +9,7 @@ import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import { updateUserName, changePassword } from '@/api/user';
 import { deleteFriend } from '@/api/friend';
-import { dissolveOrLeaveGroup, transferGroupOwner, kickGroupMember } from '@/api/group';
+import { dissolveOrLeaveGroup, transferGroupOwner, kickGroupMember, updateGroupInfo } from '@/api/group';
 import { ElMessageBox } from 'element-plus';
 
 /**
@@ -284,6 +284,35 @@ export function useProfile({ toast, friends, groups, chatTarget, chatType, reset
     }
   }
 
+  /**
+   * 编辑群聊名称（仅群主）
+   * @param {Object} group - 群聊对象
+   * @param {string} newName - 新群名称
+   */
+  async function handleEditGroupName(group, newName) {
+    if (!group?.groupId || !newName?.trim()) return;
+    const trimmedName = newName.trim();
+    if (trimmedName === group.groupName) return;
+    profileLoading.value = true;
+    try {
+      const res = await updateGroupInfo(group.groupId, { groupName: trimmedName });
+      if (res.code === 200) {
+        // 更新 profileUser 中的群名
+        profileUser.value = { ...profileUser.value, groupName: trimmedName };
+        // 同步更新群列表中的群名（groups ref 来自 useFriendList）
+        const idx = groups.value.findIndex(g => g.groupId === group.groupId);
+        if (idx !== -1) {
+          groups.value[idx] = { ...groups.value[idx], groupName: trimmedName };
+        }
+        toast.success('群名称修改成功');
+      }
+    } catch (error) {
+      toast.error(error.message || '修改群名称失败，请重试');
+    } finally {
+      profileLoading.value = false;
+    }
+  }
+
   // ==================== 资料卡快捷操作 ====================
   /**
    * 从资料卡发消息给用户
@@ -326,6 +355,7 @@ export function useProfile({ toast, friends, groups, chatTarget, chatType, reset
     handleDissolveOrLeaveGroup,
     handleTransferOwner,
     handleKickMember,
+    handleEditGroupName,
     // 快捷操作
     handleSendMessageTo,
     handleAddFriendFromProfile,

@@ -132,6 +132,7 @@ Authorization: Bearer {token}
 | 函数 | 方法 | 路径 | 说明 |
 |------|------|------|------|
 | `createGroup(data)` | POST | `/group/create` | 创建群聊 `{groupName}` |
+| `updateGroupInfo(groupId, data)` | PUT | `/group/:groupId` | 编辑群信息（仅群主，目前仅支持群名称） `{groupName}` |
 | `getGroupList()` | GET | `/group/list` | 获取群聊列表 |
 | `getGroupInfo(groupId)` | GET | `/group/info/:groupId` | 获取群详情（含成员列表） |
 | `dissolveOrLeaveGroup(groupId)` | DELETE | `/group/:groupId` | 解散（群主）/退出（成员）群聊 |

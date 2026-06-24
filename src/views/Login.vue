@@ -139,6 +139,13 @@
         </div>
       </div>
     </div>
+
+    <!-- 注册成功弹窗 -->
+    <RegisterSuccessDialog
+      v-model="showRegisterSuccess"
+      :user-account="registerResult.userAccount"
+      :user-name="registerResult.userName"
+    />
   </div>
 </template>
 
@@ -149,12 +156,12 @@
  */
 defineOptions({ name: 'Login' });
 
-import { ref, inject } from 'vue';
-import { ElMessageBox } from 'element-plus';
+import { ref, inject, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import { useDragMask } from '@/composables/useDragMask';
 import { Loading } from '@element-plus/icons-vue';
+import RegisterSuccessDialog from '@/components/common/RegisterSuccessDialog.vue';
 
 const router = useRouter();
 const userStore = useUserStore();
@@ -234,6 +241,10 @@ const registerForm = ref({
 // 注册按钮加载状态
 const registerLoading = ref(false);
 
+// 注册成功弹窗状态
+const showRegisterSuccess = ref(false);
+const registerResult = ref({ userAccount: '', userName: '' });
+
 /**
  * 处理注册
  * 验证表单并提交注册请求
@@ -292,52 +303,9 @@ async function handleRegister() {
         toast.warning('后端尚未返回账号信息，请联系管理员升级后端到 v2.6+');
       }
 
-      // 弹出注册成功卡片，展示系统生成的账号
-      try {
-        await ElMessageBox.alert(
-          `<div class="register-success-card">
-            <div class="register-success-icon"><svg viewBox="0 0 24 24" width="48" height="48"><circle cx="12" cy="12" r="12" fill="#67c23a"/><path d="M7 12l3 3 7-7" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-            <div class="register-success-title">注册成功</div>
-            <div class="register-success-info">
-              <div class="register-success-row">
-                <span class="register-success-label">账号</span>
-                <span class="register-success-value account-value">${userAccount}</span>
-              </div>
-              <div class="register-success-row">
-                <span class="register-success-label">用户名</span>
-                <span class="register-success-value">${userName}</span>
-              </div>
-              <div class="register-success-row">
-                <span class="register-success-label">密码</span>
-                <span class="register-success-value">${password}</span>
-              </div>
-            </div>
-            <div class="register-success-warning">
-              <span><svg viewBox="0 0 24 24" width="16" height="16" style="vertical-align:middle;margin-right:2px"><path d="M12 2L1 22h22L12 2z" fill="#e6a23c"/><path d="M11 9h2v6h-2zM11 17h2v2h-2z" fill="#fff"/></svg> 请牢记账号和密码，账号是登录的唯一凭证</span>
-            </div>
-          </div>`,
-          '注册成功',
-          {
-            confirmButtonText: '我知道了，去登录',
-            dangerouslyUseHTMLString: true,
-            customClass: 'register-success-dialog',
-            closeOnClickModal: false,
-            closeOnPressEscape: false,
-            showClose: false,
-          }
-        );
-      } catch {
-        // 极端情况（弹窗渲染失败），静默降级
-      }
-
-      // 清空注册表单
-      registerForm.value = { userName: '', password: '', confirmPassword: '' };
-      // 自动填入账号到登录表单，方便用户直接登录
-      loginForm.value.userAccount = userAccount;
-      loginForm.value.password = '';
-
-      // 滑动遮罩到登录区（maskPosition=0 遮挡注册表单，显示登录表单）
-      setTimeout(() => slideTo(0), 300);
+      // 保存注册结果，打开注册成功弹窗
+      registerResult.value = { userAccount, userName };
+      showRegisterSuccess.value = true;
     } else {
       toast.error(result.message || '注册失败，请重试');
     }
@@ -347,6 +315,16 @@ async function handleRegister() {
     registerLoading.value = false;
   }
 }
+
+// 注册成功弹窗关闭时：清空注册表单 + 自动填入账号 + 滑到登录区
+watch(showRegisterSuccess, (val) => {
+  if (!val && registerResult.value.userAccount) {
+    registerForm.value = { userName: '', password: '', confirmPassword: '' };
+    loginForm.value.userAccount = registerResult.value.userAccount;
+    loginForm.value.password = '';
+    setTimeout(() => slideTo(0), 300);
+  }
+});
 
 </script>
 
@@ -699,131 +677,5 @@ async function handleRegister() {
 /* 从右侧进入（向左拖动时，新文字从右顶替旧文字） */
 .text-item.enter-from-right:not(.active) {
   transform: translate(-50%, -50%) translateX(100px);
-}
-</style>
-
-<!-- 注册成功弹窗样式（unscoped，ElMessageBox 渲染在 body 下） -->
-<style>
-.register-success-dialog {
-  border-radius: 16px !important;
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.45) !important;
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.5) !important;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.06) !important;
-}
-
-.register-success-dialog .el-message-box__header {
-  padding: 22px 24px 12px;
-  border-bottom: none;
-}
-
-.register-success-dialog .el-message-box__title {
-  font-size: 17px;
-  font-weight: 700;
-  color: #333;
-}
-
-.register-success-dialog .el-message-box__content {
-  padding: 0 24px 16px;
-}
-
-.register-success-dialog .el-message-box__btns {
-  padding: 12px 24px 20px;
-}
-
-/* 注册成功卡片 */
-.register-success-card {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  gap: 14px;
-  padding: 8px 0;
-  height: 100%;
-}
-
-.register-success-icon {
-  font-size: 48px;
-  line-height: 1;
-}
-
-.register-success-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: #11998e;
-  letter-spacing: 0.5px;
-}
-
-.register-success-info {
-  width: 100%;
-  max-width: 360px;
-  background: rgba(255, 255, 255, 0.55);
-  border-radius: 12px;
-  padding: 4px 0;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
-}
-
-.register-success-row {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 12px;
-  padding: 10px 18px;
-}
-
-.register-success-row:not(:last-child) {
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-}
-
-.register-success-label {
-  font-size: 13px;
-  color: #999;
-  flex-shrink: 0;
-  min-width: 40px;
-  text-align: right;
-}
-
-.register-success-value {
-  font-size: 15px;
-  color: #333;
-  font-weight: 600;
-  word-break: break-all;
-}
-
-.account-value {
-  font-size: 20px;
-  letter-spacing: 2px;
-  color: #11998e;
-}
-
-.register-success-warning {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  font-size: 12px;
-  color: #e6a23c;
-  text-align: center;
-  padding: 4px 8px;
-}
-
-/* 按钮：对齐项目弹窗按钮视觉规范 */
-.register-success-dialog .el-button--primary {
-  background: rgba(56, 239, 125, 0.22);
-  color: #333;
-  border: 1.5px solid rgba(56, 239, 125, 0.45);
-  border-radius: 8px;
-  padding: 10px 28px;
-  font-size: 14px;
-  font-weight: 600;
-  transition: all 0.3s ease;
-}
-
-.register-success-dialog .el-button--primary:hover {
-  background: rgba(56, 239, 125, 0.35);
-  box-shadow: 0 2px 8px rgba(17, 153, 142, 0.2);
-  transform: translateY(-1px);
 }
 </style>

@@ -134,6 +134,18 @@
         @logout="handleLogout"
       />
     </div>
+
+    <!-- 请求弹窗（好友申请 / 加群申请） -->
+    <RequestDialog
+      v-model="showRequestDialog"
+      :mode="requestDialogMode"
+      :target-name="(requestDialogTarget?.userName || requestDialogTarget?.groupName) || ''"
+      :target-account="(requestDialogTarget?.userAccount || requestDialogTarget?.account) || ''"
+      :target-extra="requestDialogTarget?.memberCount != null ? requestDialogTarget.memberCount + ' 人' : ''"
+      :default-message="requestDialogDefaultMessage"
+      @confirm="onRequestDialogConfirm"
+      @cancel="onRequestDialogCancel"
+    />
   </div>
 </template>
 
@@ -158,6 +170,7 @@ import ChatLeftPanel from '@/components/chat/ChatLeftPanel.vue';
 import ChatMessageArea from '@/components/chat/ChatMessageArea.vue';
 import ChatSidePanel from '@/components/chat/ChatSidePanel.vue';
 import ChatNotificationPanel from '@/components/chat/ChatNotificationPanel.vue';
+import RequestDialog from '@/components/chat/RequestDialog.vue';
 
 import { useFriendList } from '@/composables/useFriendList';
 import { inviteToGroup, getGroupMembers } from '@/api/group';
@@ -219,6 +232,8 @@ const {
   handleGroupAction, openSidePanel, closeSidePanel,
   handlePanelSearch, handlePanelGroupSearch, handleAddFriend,
   handleCreateGroup, handleJoinGroup, handleSendMessageToGroup: _sendMessageToGroup,
+  showRequestDialog, requestDialogMode, requestDialogTarget, requestDialogDefaultMessage,
+  onRequestDialogConfirm, onRequestDialogCancel,
   _cleanupSidePanel,
 } = useSidePanel({ toast, sentRequests, loadGroups, onJoinRequestSent: handleJoinRequestSent });
 
@@ -531,10 +546,9 @@ onBeforeUnmount(() => {
 }
 </style>
 
-<!-- ElMessageBox 弹框公共样式（unscoped，渲染在 body 下） -->
+<!-- ElMessageBox confirm 弹框样式（unscoped，渲染在 body 下） -->
 <style>
-/* ==================== 公用：磨砂玻璃卡片容器 ==================== */
-.add-friend-dialog,
+/* ==================== 确认弹窗（登出/删除好友等） ==================== */
 .confirm-dialog {
   border-radius: 16px !important;
   overflow: hidden;
@@ -545,110 +559,20 @@ onBeforeUnmount(() => {
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.06) !important;
 }
 
-/* 公用：标题栏 */
-.add-friend-dialog .el-message-box__header,
 .confirm-dialog .el-message-box__header {
   padding: 22px 24px 12px;
   border-bottom: none;
 }
 
-/* 公用：标题文字 */
-.add-friend-dialog .el-message-box__title,
 .confirm-dialog .el-message-box__title {
   font-size: 17px;
   font-weight: 700;
   color: #333;
 }
 
-/* 公用：按钮栏 */
-.add-friend-dialog .el-message-box__btns,
 .confirm-dialog .el-message-box__btns {
   padding: 12px 24px 20px;
 }
-
-/* ==================== 申请弹窗专属 ==================== */
-.add-friend-dialog .el-message-box__content {
-  padding: 0 24px 16px;
-}
-.add-friend-dialog .el-message-box__message {
-  margin-bottom: 12px;
-}
-
-/* 信息卡片：头像左 + 名称/详情右，水平居中 */
-.request-dialog-card {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  padding: 16px 18px;
-  background: rgba(255, 255, 255, 0.55);
-  border-radius: 12px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
-}
-.request-dialog-avatar {
-  width: 42px; height: 42px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #11998e, #38ef7d);
-  color: #fff;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 17px; font-weight: 700;
-  flex-shrink: 0;
-}
-.request-dialog-info {
-  display: flex; flex-direction: column; gap: 2px; min-width: 0;
-}
-.request-dialog-name {
-  font-size: 14px; font-weight: 600; color: #333;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.request-dialog-sub {
-  font-size: 12px; color: #999;
-}
-.request-dialog-label {
-  display: block;
-  font-size: 13px; color: #888;
-  margin: 14px 0 6px;
-}
-
-/* 输入框 */
-.add-friend-dialog .el-textarea__inner {
-  border-radius: 10px;
-  border-color: rgba(17, 153, 142, 0.2);
-  background: rgba(255, 255, 255, 0.45);
-  resize: none;
-  font-size: 14px; padding: 10px 14px; line-height: 1.5;
-  box-shadow: none !important;
-}
-.add-friend-dialog .el-textarea__inner:focus {
-  border-color: #23f12e !important;
-  box-shadow: 0 0 0 3px rgba(17, 153, 142, 0.15) !important;
-}
-
-/* 按钮：发送申请=绿  取消=红 */
-.add-friend-dialog .el-button--primary {
-  background: rgba(56, 239, 125, 0.22);
-  color: #333;
-  border: 1.5px solid rgba(56, 239, 125, 0.45);
-  border-radius: 8px; padding: 8px 24px; font-weight: 600;
-}
-.add-friend-dialog .el-button--primary:hover {
-  background: rgba(56, 239, 125, 0.35);
-  box-shadow: 0 2px 8px rgba(17, 153, 142, 0.2);
-  transform: translateY(-1px);
-}
-.add-friend-dialog .el-button:not(.el-button--primary) {
-  background: rgba(224, 83, 83, 0.18);
-  color: #333;
-  border: 1.5px solid rgba(224, 83, 83, 0.45);
-  border-radius: 8px; padding: 8px 24px; font-weight: 600;
-}
-.add-friend-dialog .el-button:not(.el-button--primary):hover {
-  background: rgba(224, 83, 83, 0.3);
-  box-shadow: 0 2px 8px rgba(224, 83, 83, 0.2);
-  transform: translateY(-1px);
-}
-
-/* ==================== 确认弹窗专属（登出/删除好友等） ==================== */
 .confirm-dialog .el-message-box__content {
   padding: 0 24px 20px;
 }

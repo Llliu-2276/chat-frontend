@@ -9,7 +9,6 @@ import { searchUsers } from '@/api/user';
 import { sendFriendRequest } from '@/api/friend';
 import { createGroup, searchGroups, joinGroup } from '@/api/group';
 import { useUserStore } from '@/stores/user';
-import { ElMessageBox } from 'element-plus';
 import { createDebounce } from '@/utils/debounce';
 
 /**
@@ -39,6 +38,16 @@ export function useSidePanel({ toast, sentRequests, loadGroups, onJoinRequestSen
 
   /** 正在加入的群聊ID集合（防重复提交） */
   const joiningGroupIds = ref(new Set());
+
+  // ==================== 请求弹窗状态 ====================
+  /** 请求弹窗是否可见 */
+  const showRequestDialog = ref(false);
+  /** 请求弹窗模式 'friend' | 'group' */
+  const requestDialogMode = ref('friend');
+  /** 请求弹窗目标对象（user 或 group） */
+  const requestDialogTarget = ref(null);
+  /** 请求弹窗默认留言 */
+  const requestDialogDefaultMessage = ref('');
 
   // ==================== 面板操作 ====================
   /** 重置面板状态 */
@@ -115,10 +124,10 @@ export function useSidePanel({ toast, sentRequests, loadGroups, onJoinRequestSen
 
   /**
    * 发送好友申请
-   * 弹出对话框让用户输入申请留言
+   * 打开请求弹窗让用户输入申请留言
    * @param {Object} user - 目标用户对象
    */
-  async function handleAddFriend(user) {
+  function handleAddFriend(user) {
     if (!user?.userId) return;
 
     // 防止重复发送
@@ -136,71 +145,11 @@ export function useSidePanel({ toast, sentRequests, loadGroups, onJoinRequestSen
       return;
     }
 
-    const defaultMsg = `你好，我是${userStore.userName}，希望加你为好友`;
-    try {
-      const { value } = await ElMessageBox.prompt(
-        `<div class="request-dialog-card">
-          <div class="request-dialog-avatar">${(user.userName || '?').charAt(0)}</div>
-          <div class="request-dialog-info">
-            <div class="request-dialog-name">${user.userName}</div>
-            <div class="request-dialog-sub">账号：${user.userAccount}</div>
-          </div>
-        </div>
-        <span class="request-dialog-label">申请留言</span>`,
-        '发送好友申请',
-        {
-          confirmButtonText: '发送申请',
-          cancelButtonText: '取消',
-          inputValue: defaultMsg,
-          inputPlaceholder: '一句话介绍自己，提高通过率',
-          inputPattern: /^\s*\S.*$/,
-          inputErrorMessage: '留言内容不能为空且不超过100字',
-          dangerouslyUseHTMLString: true,
-          customClass: 'add-friend-dialog',
-          closeOnClickModal: false,
-        }
-      );
-      const message = (value || '').trim() || defaultMsg;
-      sendingRequestIds.value.add(user.userId);
-      const res = await sendFriendRequest({ receiverId: user.userId, message });
-      if (res.code === 201 || res.code === 200) {
-        toast.success(`已向 ${user.userName} 发送好友申请`);
-        panelSearchResults.value = [];
-        closeSidePanel();
-      }
-    } catch (e) {
-      // Element Plus 取消时可能抛出字符串 'cancel' 或 Error('cancel')
-      if (e === 'cancel' || e?.message === 'cancel') {
-        // 用户主动取消，静默处理
-      } else {
-        const errorMsg = e?.message || String(e || '');
-        if (errorMsg.includes('409') || errorMsg.includes('Conflict')) {
-          if (errorMsg.includes('已经是好友')) {
-            toast.info('你们已经是好友，无需再次申请');
-          } else if (errorMsg.includes('待处理')) {
-            toast.info('已有待处理的申请，请等待对方处理');
-          } else {
-            toast.info('该申请无法发送，请检查好友关系');
-          }
-        } else if (errorMsg.includes('400')) {
-          toast.info('请求参数有误，请检查后重试');
-        } else if (errorMsg.includes('401') || errorMsg.includes('未授权')) {
-          toast.error('登录已过期，请重新登录');
-        } else if (errorMsg.includes('403')) {
-          toast.error('无权执行此操作');
-        } else if (errorMsg.includes('404')) {
-          toast.info('用户不存在');
-        } else if (errorMsg.includes('500') || errorMsg.includes('服务器')) {
-          toast.error('服务器繁忙，请稍后重试');
-        } else if (errorMsg.includes('网络') || errorMsg.includes('timeout') || errorMsg.includes('Network')) {
-          toast.error('网络连接失败，请检查网络后重试');
-        } else {
-          toast.error(errorMsg || '发送申请失败，请重试');
-        }
-      }
-    } finally {
-      sendingRequestIds.value.delete(user.userId);
-    }
+    // 打开请求弹窗
+    requestDialogMode.value = 'friend';
+    requestDialogTarget.value = user;
+    requestDialogDefaultMessage.value = `你好，我是${userStore.userName}，希望加你为好友`;
+    showRequestDialog.value = true;
   }
 
   /**
@@ -254,73 +203,22 @@ export function useSidePanel({ toast, sentRequests, loadGroups, onJoinRequestSen
   }, 300);
 
   /**
-   * 加入群聊（弹出对话框输入申请留言 → 发送加群申请，需群主审核 — 后端 v2.1）
+   * 加入群聊
+   * 打开请求弹窗让用户输入申请留言
    * @param {Object} group - 群聊对象
    */
-  async function handleJoinGroup(group) {
+  function handleJoinGroup(group) {
     if (!group?.groupId) return;
     if (joiningGroupIds.value.has(group.groupId)) {
       toast.info('正在发送申请，请稍候');
       return;
     }
 
-    const defaultMsg = `你好，我是${userStore.userName}，希望加入群聊「${group.groupName}」`;
-    try {
-      // 弹出入群申请对话框（与好友申请样式一致）
-      const { value } = await ElMessageBox.prompt(
-        `<div class="request-dialog-card">
-          <div class="request-dialog-avatar">${(group.groupName || '?').charAt(0)}</div>
-          <div class="request-dialog-info">
-            <div class="request-dialog-name">${group.groupName}</div>
-            <div class="request-dialog-sub">群号：${group.account || '-'}  ·  ${group.memberCount || 0} 人</div>
-          </div>
-        </div>
-        <span class="request-dialog-label">申请留言</span>`,
-        '申请加入群聊',
-        {
-          confirmButtonText: '发送申请',
-          cancelButtonText: '取消',
-          inputValue: defaultMsg,
-          inputPlaceholder: '介绍一下自己，让群主更愿意通过',
-          inputPattern: /^\s*\S.*$/,
-          inputErrorMessage: '留言内容不能为空',
-          dangerouslyUseHTMLString: true,
-          customClass: 'add-friend-dialog',
-          closeOnClickModal: false,
-        }
-      );
-      const message = (value || '').trim() || defaultMsg;
-
-      joiningGroupIds.value.add(group.groupId);
-      const res = await joinGroup(group.groupId, { message });
-      if (res.code === 201) {
-        toast.success(`已发送加群申请，等待群主「${group.ownerName || '审核'}」`);
-        // 从响应中提取 requestId（若后端返回），用于精准去重
-        const requestId = res.data?.requestId || res.data?.id || 0;
-        // 通知父组件记录自己发出的申请
-        if (onJoinRequestSent) {
-          onJoinRequestSent({ groupId: group.groupId, groupName: group.groupName, message, requestId });
-        }
-        groupSearchResults.value = [];
-        closeSidePanel();
-      }
-    } catch (e) {
-      // Element Plus 取消时可能抛出字符串 'cancel' 或 Error('cancel')
-      if (e === 'cancel' || e?.message === 'cancel') {
-        // 用户主动取消，静默处理
-      } else {
-        const errMsg = e?.message || String(e || '');
-        if (errMsg.includes('409') || errMsg.includes('已在') || errMsg.includes('成员')) {
-          toast.info('你已是该群聊成员');
-        } else if (errMsg.includes('申请') || errMsg.includes('pending') || errMsg.includes('待处理')) {
-          toast.info('已有待处理的加群申请，请等待群主审核');
-        } else {
-          toast.error(errMsg || '发送申请失败，请重试');
-        }
-      }
-    } finally {
-      joiningGroupIds.value.delete(group.groupId);
-    }
+    // 打开请求弹窗
+    requestDialogMode.value = 'group';
+    requestDialogTarget.value = group;
+    requestDialogDefaultMessage.value = `你好，我是${userStore.userName}，希望加入群聊「${group.groupName}」`;
+    showRequestDialog.value = true;
   }
 
   /**
@@ -332,6 +230,93 @@ export function useSidePanel({ toast, sentRequests, loadGroups, onJoinRequestSen
     closeSidePanel();
     // 返回给 Chat.vue 通过 viewProfile / onSelectGroup 编排
     return group;
+  }
+
+  // ==================== 请求弹窗回调 ====================
+  /**
+   * 请求弹窗确认回调
+   * 执行 API 调用发送申请（好友申请或加群申请）
+   * @param {string} message - 用户输入的留言内容
+   */
+  async function onRequestDialogConfirm(message) {
+    const target = requestDialogTarget.value;
+    if (!message?.trim() || !target) return;
+
+    const isFriend = requestDialogMode.value === 'friend';
+    const msg = message.trim();
+
+    if (isFriend) {
+      const user = target;
+      sendingRequestIds.value.add(user.userId);
+      try {
+        const res = await sendFriendRequest({ receiverId: user.userId, message: msg });
+        if (res.code === 201 || res.code === 200) {
+          toast.success(`已向 ${user.userName} 发送好友申请`);
+          panelSearchResults.value = [];
+          closeSidePanel();
+          showRequestDialog.value = false;
+        }
+      } catch (e) {
+        const errorMsg = e?.message || String(e || '');
+        if (errorMsg.includes('409') || errorMsg.includes('Conflict')) {
+          if (errorMsg.includes('已经是好友')) {
+            toast.info('你们已经是好友，无需再次申请');
+          } else if (errorMsg.includes('待处理')) {
+            toast.info('已有待处理的申请，请等待对方处理');
+          } else {
+            toast.info('该申请无法发送，请检查好友关系');
+          }
+        } else if (errorMsg.includes('400')) {
+          toast.info('请求参数有误，请检查后重试');
+        } else if (errorMsg.includes('401') || errorMsg.includes('未授权')) {
+          toast.error('登录已过期，请重新登录');
+        } else if (errorMsg.includes('403')) {
+          toast.error('无权执行此操作');
+        } else if (errorMsg.includes('404')) {
+          toast.info('用户不存在');
+        } else if (errorMsg.includes('500') || errorMsg.includes('服务器')) {
+          toast.error('服务器繁忙，请稍后重试');
+        } else if (errorMsg.includes('网络') || errorMsg.includes('timeout') || errorMsg.includes('Network')) {
+          toast.error('网络连接失败，请检查网络后重试');
+        } else {
+          toast.error(errorMsg || '发送申请失败，请重试');
+        }
+      } finally {
+        sendingRequestIds.value.delete(user.userId);
+      }
+    } else {
+      const group = target;
+      joiningGroupIds.value.add(group.groupId);
+      try {
+        const res = await joinGroup(group.groupId, { message: msg });
+        if (res.code === 201) {
+          toast.success(`已发送加群申请，等待群主「${group.ownerName || '审核'}」`);
+          const requestId = res.data?.requestId || res.data?.id || 0;
+          if (onJoinRequestSent) {
+            onJoinRequestSent({ groupId: group.groupId, groupName: group.groupName, message: msg, requestId });
+          }
+          groupSearchResults.value = [];
+          closeSidePanel();
+          showRequestDialog.value = false;
+        }
+      } catch (e) {
+        const errMsg = e?.message || String(e || '');
+        if (errMsg.includes('409') || errMsg.includes('已在') || errMsg.includes('成员')) {
+          toast.info('你已是该群聊成员');
+        } else if (errMsg.includes('申请') || errMsg.includes('pending') || errMsg.includes('待处理')) {
+          toast.info('已有待处理的加群申请，请等待群主审核');
+        } else {
+          toast.error(errMsg || '发送申请失败，请重试');
+        }
+      } finally {
+        joiningGroupIds.value.delete(group.groupId);
+      }
+    }
+  }
+
+  /** 请求弹窗取消回调 */
+  function onRequestDialogCancel() {
+    showRequestDialog.value = false;
   }
 
   // ==================== 侦听器 ====================
@@ -360,6 +345,11 @@ export function useSidePanel({ toast, sentRequests, loadGroups, onJoinRequestSen
     newGroupName,
     sendingRequestIds,
     joiningGroupIds,
+    // 请求弹窗状态
+    showRequestDialog,
+    requestDialogMode,
+    requestDialogTarget,
+    requestDialogDefaultMessage,
     // 面板操作
     openSidePanel,
     closeSidePanel,
@@ -370,6 +360,9 @@ export function useSidePanel({ toast, sentRequests, loadGroups, onJoinRequestSen
     handleCreateGroup,
     handleJoinGroup,
     handleSendMessageToGroup,
+    // 请求弹窗回调
+    onRequestDialogConfirm,
+    onRequestDialogCancel,
     // 清理（Chat.vue 双重保险）
     _cleanupSidePanel() {
       _panelDebounce?.cancel();
